@@ -436,8 +436,12 @@
     </select>
 
     <div id="existingItemFields">
+      <label for="existingItemFilter">Filter existing items</label>
+      <input id="existingItemFilter" type="search" placeholder="Search by Internal ID, item name, or GTIN">
+
       <label for="existingInternalId">Existing item</label>
       <select id="existingInternalId"></select>
+      <p id="existingItemMatchCount" class="small" style="margin-top:6px"></p>
     </div>
 
     <div id="newItemFields" hidden>
@@ -680,6 +684,7 @@
     // Selection alone does not switch cameras. User must press Use Selected Camera.
   });
 
+  $("existingItemFilter").addEventListener("input", filterExistingItems);
   $("unknownMode").addEventListener("change", updateUnknownDialogMode);
   $("cancelUnknown").addEventListener("click", () => {
     pendingUnknownScan = null;
@@ -1625,17 +1630,11 @@
   function openUnknownGtinDialog(gtin) {
     if (pendingUnknownScan) updateUnknownScanDetails(pendingUnknownScan.raw, pendingUnknownScan.parsed);
     else $("unknownGtinValue").textContent = `GTIN / UPC: ${gtin}`;
-    const select = $("existingInternalId");
-    select.innerHTML = "";
+
+    $("existingItemFilter").value = "";
+    populateExistingItemOptions("");
 
     const ids = Object.keys(catalog.items).sort();
-    for (const internalId of ids) {
-      const option = document.createElement("option");
-      option.value = internalId;
-      option.textContent = `${internalId} — ${catalog.items[internalId].name || "Unnamed item"}`;
-      select.appendChild(option);
-    }
-
     $("unknownMode").value = ids.length ? "existing" : "new";
     $("newInternalId").value = "";
     $("newInternalName").value = "";
@@ -1643,6 +1642,51 @@
     $("newRequiresExpiration").checked = true;
     updateUnknownDialogMode();
     $("unknownGtinDialog").showModal();
+  }
+
+  function populateExistingItemOptions(filterText = "") {
+    const select = $("existingInternalId");
+    const matchCount = $("existingItemMatchCount");
+    const query = String(filterText || "").trim().toLowerCase();
+
+    select.innerHTML = "";
+
+    const ids = Object.keys(catalog.items).sort();
+    const matches = ids.filter(internalId => {
+      const item = catalog.items[internalId] || {};
+      const name = String(item.name || "");
+      const gtins = Object.entries(catalog.gtinToInternalId)
+        .filter(([, mappedId]) => mappedId === internalId)
+        .map(([gtin]) => gtin);
+
+      if (!query) return true;
+
+      return internalId.toLowerCase().includes(query) ||
+        name.toLowerCase().includes(query) ||
+        gtins.some(gtin => String(gtin).toLowerCase().includes(query));
+    });
+
+    for (const internalId of matches) {
+      const option = document.createElement("option");
+      option.value = internalId;
+      option.textContent = `${internalId} — ${catalog.items[internalId].name || "Unnamed item"}`;
+      select.appendChild(option);
+    }
+
+    if (!matches.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "No matching items";
+      select.appendChild(option);
+    }
+
+    matchCount.textContent = query
+      ? `${matches.length} matching item${matches.length === 1 ? "" : "s"}`
+      : `${matches.length} item${matches.length === 1 ? "" : "s"} available`;
+  }
+
+  function filterExistingItems() {
+    populateExistingItemOptions($("existingItemFilter").value);
   }
 
   function updateUnknownDialogMode() {
