@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="en">
 <head>
@@ -238,7 +237,8 @@
         </div>
         <div class="scan-actions">
           <button id="cameraLaunch" class="primary icon-button" title="Open camera scanner" aria-label="Open camera scanner">📷</button>
-          <button id="manualLaunch" title="Manual barcode entry">Manual</button>
+          <button id="manualLaunch" title="Manual barcode entry">Barcode Text</button>
+          <button id="manualEntryLaunch" title="Manual inventory entry">Manual Entry</button>
         </div>
       </div>
 
@@ -362,6 +362,52 @@
       <div class="modal-actions">
         <button id="closeManual">Cancel</button>
         <button id="processManual" class="primary">Process Barcode</button>
+      </div>
+    </div>
+  </dialog>
+
+
+  <dialog id="manualEntryDialog">
+    <div class="modal-body">
+      <h2>Manual Inventory Entry</h2>
+      <p class="small">Enter the item information directly without constructing a barcode string.</p>
+
+      <div class="row">
+        <div>
+          <label for="manualEntryInternalId">Internal ID</label>
+          <select id="manualEntryInternalId"></select>
+        </div>
+        <div>
+          <label for="manualEntryGtin">GTIN / UPC</label>
+          <input id="manualEntryGtin" placeholder="Optional if item already exists">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="manualEntryLot">Lot</label>
+          <input id="manualEntryLot" placeholder="Lot number">
+        </div>
+        <div>
+          <label for="manualEntryExpiration">Expiration</label>
+          <input id="manualEntryExpiration" type="date">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="manualEntrySerial">Serial</label>
+          <input id="manualEntrySerial" placeholder="Optional">
+        </div>
+        <div>
+          <label for="manualEntryQuantity">Quantity</label>
+          <input id="manualEntryQuantity" type="number" min="1" step="1" value="1">
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="closeManualEntry">Cancel</button>
+        <button id="saveManualEntry" class="primary">Add Inventory</button>
       </div>
     </div>
   </dialog>
@@ -618,6 +664,15 @@
     $("manual").focus();
   });
   $("closeManual").addEventListener("click", () => $("manualDialog").close());
+
+  $("manualEntryLaunch").addEventListener("click", () => {
+    populateManualEntryItems();
+    $("manualEntryQuantity").value = "1";
+    $("manualEntryDialog").showModal();
+  });
+  $("closeManualEntry").addEventListener("click", () => $("manualEntryDialog").close());
+  $("saveManualEntry").addEventListener("click", saveManualInventoryEntry);
+
 
   $("cameraLaunch").addEventListener("click", async () => {
     $("cameraDialog").showModal();
@@ -1072,6 +1127,147 @@
     $("scanFlash").className = "";
   }
 
+
+  function populateManualEntryItems() {
+    const select = $("manualEntryInternalId");
+    select.innerHTML = "";
+
+    for (const internalId of Object.keys(catalog.items).sort()) {
+      const option = document.createElement("option");
+      option.value = internalId;
+      option.textContent = `${internalId} — ${catalog.items[internalId].name || "Unnamed item"}`;
+      select.appendChild(option);
+    }
+  }
+
+  function saveManualInventoryEntry() {
+    const internalId = $("manualEntryInternalId").value;
+    const gtinInput = $("manualEntryGtin").value.trim();
+    const lot = $("manualEntryLot").value.trim();
+    const expirationIso = $("manualEntryExpiration").value;
+    const serial = $("manualEntrySerial").value.trim();
+    const quantity = Math.max(1, Number.parseInt($("manualEntryQuantity").value, 10) || 1);
+
+    if (!internalId || !catalog.items[internalId]) {
+      setStatus("Select a valid Internal ID.", "bad");
+      flashScreen("red");
+      return;
+    }
+
+    const itemConfig = catalog.items[internalId];
+    const requiresLot = itemConfig.requiresLot !== false;
+    const requiresExpiration = itemConfig.requiresExpiration !== false;
+
+    if (requiresLot && !lot) {
+      setStatus(`Item ${internalId} requires a lot number.`, "bad");
+      flashScreen("red");
+      $("manualEntryLot").focus();
+      return;
+    }
+
+    if (requiresExpiration && !expirationIso) {
+      setStatus(`Item ${internalId} requires an expiration date.`, "bad");
+      flashScreen("red");
+      $("manualEntryExpiration").focus();
+      return;
+    }
+
+    let gtin = gtinInput;
+
+    if (!gtin) {
+      const knownGtins = Object.entries(catalog.gtinToInternalId)
+        .filter(([, mappedId]) => mappedId === internalId)
+        .map(([mappedGtin]) => mappedGtin);
+
+      if (knownGtins.length === 1) {
+        gtin = knownGtins[0];
+      } else if (knownGtins.length > 1) {
+        setStatus("This item has multiple GTINs. Enter which GTIN this inventory belongs to.", "bad");
+        flashScreen("red");
+        $("manualEntryGtin").focus();
+        return;
+      } else {
+        // Allow internal items with no GTIN to be inventoried manually.
+        gtin = "";
+      }
+    }
+
+    if (gtin && catalog.gtinToInternalId[gtin] && catalog.gtinToInternalId[gtin] !== internalId) {
+      setStatus(`GTIN ${gtin} is already assigned to another Internal ID.`, "bad");
+      flashScreen("red");
+      return;
+    }
+
+    if (gtin && !catalog.gtinToInternalId[gtin]) {
+      catalog.gtinToInternalId[gtin] = internalId;
+      persistCatalog();
+    }
+
+    let expirationRaw = "";
+    let expiration = "";
+
+    if (expirationIso) {
+      const [yyyy, mm, dd] = expirationIso.split("-");
+      expirationRaw = `${yyyy.slice(-2)}${mm}${dd}`;
+      expiration = expirationIso;
+    }
+
+    const settings = getSettings();
+    const serialPart = settings.includeSerial ? serial : "";
+    const key = [internalId, gtin, lot, expirationRaw, serialPart].join("|");
+    const now = new Date().toISOString();
+
+    if (!records[key]) {
+      records[key] = {
+        internalId,
+        item: gtin,
+        gtin,
+        itemName: itemConfig.name || "",
+        lot,
+        expiration,
+        expirationRaw,
+        serial: serialPart,
+        firstScanned: now,
+        lastScanned: now,
+        count: 0,
+        lastRaw: "[MANUAL ENTRY]"
+      };
+    }
+
+    records[key].count += quantity;
+    records[key].lastScanned = now;
+    records[key].itemName = itemConfig.name || "";
+    records[key].lastRaw = "[MANUAL ENTRY]";
+
+    persist();
+    render();
+
+    const parsed = {
+      item: gtin,
+      gtin,
+      lot,
+      expiration,
+      expirationRaw,
+      serial,
+      values: {}
+    };
+
+    updateLastScanPanel("[MANUAL ENTRY]", parsed, internalId, "Manual entry");
+    setStatus(
+      `Added ${quantity} to ${itemConfig.name || internalId}${lot ? `, lot ${lot}` : ""}. New count: ${records[key].count}.`,
+      "good"
+    );
+    flashScreen("green");
+
+    $("manualEntryDialog").close();
+    $("manualEntryGtin").value = "";
+    $("manualEntryLot").value = "";
+    $("manualEntryExpiration").value = "";
+    $("manualEntrySerial").value = "";
+    $("manualEntryQuantity").value = "1";
+    scanner.focus();
+  }
+
   function processScan(rawInput) {
     const raw = normalizeScannerText(rawInput);
     if (!raw) {
@@ -1236,6 +1432,8 @@
   }
 
   function findFollowingAIWithoutSeparator(s, start, limit) {
+    const dateCandidates = [];
+
     for (let p = start + 1; p < limit; p++) {
       const spec = getAISpec(s, p);
       if (!spec || !spec.fixed) continue;
@@ -1244,13 +1442,42 @@
       if (payload.length !== spec.length) continue;
 
       if (["11","12","13","15","16","17"].includes(spec.ai)) {
-        if (/^\d{6}$/.test(payload)) return p;
+        if (isValidGs1Date(payload)) {
+          dateCandidates.push({ position: p, ai: spec.ai });
+        }
         continue;
       }
 
       if (/^\d+$/.test(payload)) return p;
     }
+
+    // When recovering from a missing FNC1 after a variable field such as AI 10,
+    // prefer a valid expiration-date AI 17. Otherwise use the first valid date AI.
+    const expiration = dateCandidates.find(candidate => candidate.ai === "17");
+    if (expiration) return expiration.position;
+    if (dateCandidates.length) return dateCandidates[0].position;
+
     return -1;
+  }
+
+  function isValidGs1Date(yymmdd) {
+    if (!/^\d{6}$/.test(yymmdd)) return false;
+
+    const yy = Number(yymmdd.slice(0,2));
+    const mm = Number(yymmdd.slice(2,4));
+    const dd = Number(yymmdd.slice(4,6));
+
+    if (mm < 1 || mm > 12) return false;
+
+    // GS1 permits day 00 to mean the last day of the month.
+    if (dd === 0) return true;
+
+    const year = 2000 + yy;
+    const test = new Date(Date.UTC(year, mm - 1, dd));
+
+    return test.getUTCFullYear() === year &&
+      test.getUTCMonth() === mm - 1 &&
+      test.getUTCDate() === dd;
   }
 
   function findLikelyFollowingAI(s, start, maxLen) {
