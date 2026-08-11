@@ -218,7 +218,7 @@
 </style>
 </head>
 <body>
-<div id="scanFlash"></div>
+<div id="scanFlash" class=""></div>
 <main>
   <h1>Medical Barcode Inventory</h1>
   <p class="subtitle">Scan items, resolve GTINs to internal IDs, and track quantity by lot and expiration.</p>
@@ -226,11 +226,11 @@
   <div class="app-shell">
     <div class="main-column">
       <div class="scan-strip">
-        <div id="scanner" class="scanner active" tabindex="0" aria-label="Barcode scanner input area">
+        <div id="scanner" class="scanner" tabindex="0" aria-label="Barcode scanner input area">
           <div>
             <strong>Scan barcode</strong>
             <p class="small">Hardware scanner input is captured automatically.</p>
-            <div id="live" class="live" aria-live="polite" style="margin-top:7px">Waiting for scan…</div>
+            <div id="live" class="live" aria-live="polite" style="margin-top:7px">␝011019734404221017290521112405221024EOA710</div>
           </div>
         </div>
         <div class="scan-actions">
@@ -239,41 +239,41 @@
         </div>
       </div>
 
-      <div id="status" class="status" aria-live="assertive"></div>
+      <div id="status" class="status good" aria-live="assertive">Accepted: Test — GTIN 10197344042210, lot 24EOA710, count 3. AIs: 10, 11, 17, 01.</div>
 
       <section class="card compact-last">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
           <h2 style="margin:0">Last Scan</h2>
-          <span id="lastScanState" class="pill">Waiting</span>
+          <span id="lastScanState" class="pill">Accepted</span>
         </div>
 
         <div class="row" style="margin-top:8px">
-          <div><label>Internal ID</label><div id="lastInternalId" class="live">—</div></div>
-          <div><label>Item</label><div id="lastItemName" class="live">—</div></div>
-          <div><label>GTIN / UPC</label><div id="lastGtin" class="live">—</div></div>
-          <div><label>Lot</label><div id="lastLot" class="live">—</div></div>
+          <div><label>Internal ID</label><div id="lastInternalId" class="live">0001</div></div>
+          <div><label>Item</label><div id="lastItemName" class="live">Test</div></div>
+          <div><label>GTIN / UPC</label><div id="lastGtin" class="live">10197344042210</div></div>
+          <div><label>Lot</label><div id="lastLot" class="live">24EOA710</div></div>
         </div>
 
         <div class="details-wide">
           <div>
             <label>Expiration / Serial</label>
-            <div class="live"><span id="lastExpiration">—</span> · <span id="lastSerial">—</span></div>
+            <div class="live"><span id="lastExpiration">2029-05-21</span> · <span id="lastSerial">—</span></div>
           </div>
           <div>
             <label>Decoded AIs</label>
-            <div id="lastAis" class="live">—</div>
+            <div id="lastAis" class="live">10: 24EOA710 | 11: 240522 | 17: 290521 | 01: 10197344042210</div>
           </div>
         </div>
 
         <details style="margin-top:8px">
           <summary>Raw barcode</summary>
-          <div id="lastRaw" class="live">—</div>
+          <div id="lastRaw" class="live">␝011019734404221017290521112405221024EOA710</div>
         </details>
       </section>
   <div class="stats">
-    <div class="stat"><b id="totalScans">1</b><span>Total accepted scans</span></div>
-    <div class="stat"><b id="uniqueLots">1</b><span>Unique item/lot records</span></div>
-    <div class="stat"><b id="lastScan">06:56 PM</b><span>Last scan time</span></div>
+    <div class="stat"><b id="totalScans">4</b><span>Total accepted scans</span></div>
+    <div class="stat"><b id="uniqueLots">2</b><span>Unique item/lot records</span></div>
+    <div class="stat"><b id="lastScan">08:07 PM</b><span>Last scan time</span></div>
   </div>
 
   <section class="card">
@@ -307,8 +307,24 @@
         <tbody id="tallyBody"><tr class="group-row">
           <td><code>0001</code></td>
           <td colspan="6">Test</td>
-          <td class="num"><strong>1</strong></td>
+          <td class="num"><strong>4</strong></td>
           <td colspan="2"></td></tr><tr>
+        <td><code>0001</code></td>
+        <td>Test</td>
+        <td><code>10197344042210</code></td>
+        <td><span class="pill">24EOA710</span></td>
+        <td>2029-05-21</td>
+        <td>—</td>
+        <td>8/10/2026, 8:05:22 PM</td>
+        <td>8/10/2026, 8:07:20 PM</td>
+        <td class="num"><strong>3</strong></td>
+        <td>
+          <div style="display:flex;gap:6px;align-items:center;min-width:190px">
+            <input type="text" inputmode="numeric" data-quantity="0001|10197344042210|24EOA710|290521|" placeholder="+1, -1, or 10" aria-label="Adjust quantity" style="width:115px">
+            <button data-apply-quantity="0001|10197344042210|24EOA710|290521|">Apply</button>
+            <button data-delete="0001|10197344042210|24EOA710|290521|" title="Delete this record">Delete</button>
+          </div>
+        </td></tr><tr>
         <td><code>0001</code></td>
         <td>Test</td>
         <td><code>00368462157138</code></td>
@@ -395,14 +411,13 @@
       <div class="buttons">
         <button id="startCamera" class="primary">Start Camera</button>
         <button id="stopCamera" disabled="">Stop Camera</button>
-        <select id="cameraSelect" style="width:auto;min-width:190px" disabled="">
-          <option value="">Default camera</option>
-        </select>
+        <select id="cameraSelect" style="width:auto;min-width:190px" disabled=""><option value="">Camera 1</option></select>
+        <button id="refreshCameras">Refresh Cameras</button>
       </div>
-      <div id="cameraWrap" class="camera-wrap" style="margin-top:14px;display:none;min-height:260px">
-        <div id="cameraReader" style="width:100%;min-height:260px;background:#000"></div>
+      <div id="cameraWrap" class="camera-wrap" style="margin-top: 14px; display: none; min-height: 260px;">
+        <div id="cameraReader" style="width: 100%; min-height: 260px; background: rgb(0, 0, 0); position: relative;"></div>
       </div>
-      <div id="cameraMessage" class="small" style="margin-top:10px">Camera access generally requires HTTPS or localhost. Uses html5-qrcode with its ZXing-based decoder.</div>
+      <div id="cameraMessage" class="small" style="margin-top:10px">Camera scanner stopped.</div>
       <div class="modal-actions"><button id="closeCamera">Close</button></div>
     </div>
   </dialog>
@@ -410,16 +425,16 @@
   <div class="modal-body">
     <h2>Unknown GTIN</h2>
     <p class="small">This GTIN is not in the saved item catalog. Link it to an existing Internal ID or create a new one.</p>
-    <div class="live" id="unknownGtinValue" style="margin-top:12px"></div>
+    <div class="live" id="unknownGtinValue" style="margin-top:12px">GTIN / UPC: 10197344042210</div>
 
     <div class="row" style="margin-top:10px">
       <div>
         <label>Lot</label>
-        <div id="unknownLot" class="live">—</div>
+        <div id="unknownLot" class="live">24EOA710</div>
       </div>
       <div>
         <label>Expiration</label>
-        <div id="unknownExpiration" class="live">—</div>
+        <div id="unknownExpiration" class="live">2029-05-21</div>
       </div>
     </div>
 
@@ -430,12 +445,12 @@
       </div>
       <div>
         <label>Decoded AIs</label>
-        <div id="unknownAis" class="live">—</div>
+        <div id="unknownAis" class="live">10: 24EOA710 | 11: 240522 | 17: 290521 | 01: 10197344042210</div>
       </div>
     </div>
 
     <label>Raw barcode</label>
-    <div id="unknownRaw" class="live">—</div>
+    <div id="unknownRaw" class="live">␝011019734404221017290521112405221024EOA710</div>
 
     <label for="unknownMode">Action</label>
     <select id="unknownMode">
@@ -445,7 +460,7 @@
 
     <div id="existingItemFields">
       <label for="existingInternalId">Existing item</label>
-      <select id="existingInternalId"></select>
+      <select id="existingInternalId"><option value="0001">0001 — Test</option></select>
     </div>
 
     <div id="newItemFields" hidden="">
@@ -535,6 +550,7 @@
 
   let html5CameraScanner = null;
   let cameraRunning = false;
+  let cameraTransitioning = false;
   let lastCameraValue = "";
   let lastCameraSeenAt = 0;
 
@@ -607,7 +623,7 @@
 
   document.addEventListener("keydown", handleKeydown, true);
   window.addEventListener("pagehide", () => {
-    if (cameraRunning && html5CameraScanner) {
+    if (html5CameraScanner && html5CameraScanner.isScanning) {
       html5CameraScanner.stop().catch(() => {});
     }
   });
@@ -623,7 +639,8 @@
 
   $("cameraLaunch").addEventListener("click", () => $("cameraDialog").showModal());
   $("closeCamera").addEventListener("click", async () => {
-    if (cameraRunning) await stopCameraScanner();
+    if (cameraTransitioning) return;
+    if (cameraRunning || html5CameraScanner) await stopCameraScanner();
     $("cameraDialog").close();
     scanner.focus();
   });
@@ -660,14 +677,18 @@
   $("importCatalogCsv").addEventListener("click", () => $("importCatalogCsvFile").click());
   $("importCatalogCsvFile").addEventListener("change", importCatalogCsv);
 
-  $("startCamera").addEventListener("click", startCameraScanner);
+  $("startCamera").addEventListener("click", () => startCameraScanner($("cameraSelect").value || null));
   $("stopCamera").addEventListener("click", stopCameraScanner);
+  $("refreshCameras").addEventListener("click", populateCameraList);
   $("cameraSelect").addEventListener("change", async () => {
+    if (cameraTransitioning) return;
+
+    const wanted = $("cameraSelect").value || null;
     if (cameraRunning) {
-      const wanted = $("cameraSelect").value || null;
       await stopCameraScanner();
-      await startCameraScanner(wanted);
     }
+    await sleep(150);
+    await startCameraScanner(wanted);
   });
 
   $("unknownMode").addEventListener("change", updateUnknownDialogMode);
@@ -752,106 +773,181 @@
 
 
   async function startCameraScanner(deviceId = null) {
-    if (cameraRunning) return;
+    if (cameraRunning || cameraTransitioning) return;
+    cameraTransitioning = true;
+
+    $("startCamera").disabled = true;
+    $("stopCamera").disabled = true;
 
     if (typeof Html5Qrcode === "undefined") {
       $("cameraState").textContent = "Library error";
       $("cameraMessage").textContent =
         "The html5-qrcode scanner library could not be loaded. Check the network connection and reload the page.";
       flashScreen("red");
+      cameraTransitioning = false;
+      $("startCamera").disabled = false;
       return;
     }
 
-    try {
-      const formats = [
-        Html5QrcodeSupportedFormats.DATA_MATRIX,
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.UPC_A,
-        Html5QrcodeSupportedFormats.UPC_E,
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.QR_CODE,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.ITF
-      ];
+    const formats = [
+      Html5QrcodeSupportedFormats.DATA_MATRIX,
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.QR_CODE,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.ITF
+    ];
 
-      if (!html5CameraScanner) {
+    const scanConfig = {
+      fps: 10,
+      qrbox: (viewfinderWidth, viewfinderHeight) => {
+        const width = Math.floor(Math.min(viewfinderWidth * 0.88, 520));
+        const height = Math.floor(Math.min(viewfinderHeight * 0.55, 280));
+        return {
+          width: Math.max(160, width),
+          height: Math.max(100, height)
+        };
+      },
+      disableFlip: false
+    };
+
+    const attempts = [];
+    if (deviceId) {
+      attempts.push({ label: "selected camera", cameraConfig: deviceId });
+    }
+    attempts.push({
+      label: "environment camera",
+      cameraConfig: { facingMode: { ideal: "environment" } }
+    });
+    attempts.push({
+      label: "default camera",
+      cameraConfig: { facingMode: "user" }
+    });
+
+    $("cameraWrap").style.display = "block";
+    $("cameraState").textContent = "Starting…";
+
+    let lastError = null;
+
+    for (const attempt of attempts) {
+      try {
+        // Never reuse an instance after a failed start. html5-qrcode can
+        // remain in an internal transition state even after start() rejects.
+        await destroyCameraScanner();
+
+        $("cameraReader").innerHTML = "";
         html5CameraScanner = new Html5Qrcode(
           "cameraReader",
           {
             formatsToSupport: formats,
             verbose: false,
-            // Force the library's ZXing-based decoder instead of the browser
-            // BarcodeDetector implementation that the previous build used.
             useBarCodeDetectorIfSupported: false
           }
         );
-      }
 
-      $("cameraWrap").style.display = "block";
-      $("cameraState").textContent = "Starting…";
-      $("cameraMessage").textContent = "Requesting camera access…";
+        $("cameraMessage").textContent = `Trying ${attempt.label}…`;
 
-      const cameraConfig = deviceId
-        ? { deviceId: { exact: deviceId } }
-        : { facingMode: "environment" };
+        await html5CameraScanner.start(
+          attempt.cameraConfig,
+          scanConfig,
+          onCameraScanSuccess,
+          () => {}
+        );
 
-      const scanConfig = {
-        fps: 12,
-        qrbox: (viewfinderWidth, viewfinderHeight) => {
-          const width = Math.floor(Math.min(viewfinderWidth * 0.88, 520));
-          const height = Math.floor(Math.min(viewfinderHeight * 0.55, 280));
-          return { width: Math.max(180, width), height: Math.max(120, height) };
-        },
-        aspectRatio: 4 / 3,
-        disableFlip: false
-      };
+        cameraRunning = true;
+        cameraTransitioning = false;
 
-      await html5CameraScanner.start(
-        cameraConfig,
-        scanConfig,
-        onCameraScanSuccess,
-        () => {}
-      );
+        $("startCamera").disabled = true;
+        $("stopCamera").disabled = false;
+        $("cameraState").textContent = "Scanning";
+        $("cameraMessage").textContent =
+          `Using ${attempt.label}. Point the camera at a barcode and hold it steady.`;
 
-      cameraRunning = true;
-      $("startCamera").disabled = true;
-      $("stopCamera").disabled = false;
-      $("cameraState").textContent = "Scanning";
-      $("cameraMessage").textContent =
-        "Point the camera at a barcode. Data Matrix, UPC/EAN, Code 128, QR, and common 1D formats are enabled.";
-
-      await populateCameraList();
-    } catch (error) {
-      console.error("Camera start error:", error);
-      $("cameraState").textContent = "Error";
-      $("cameraMessage").textContent = `Could not start camera: ${error?.message || error}`;
-      $("startCamera").disabled = false;
-      $("stopCamera").disabled = true;
-      flashScreen("red");
-
-      try {
-        if (html5CameraScanner?.isScanning) await html5CameraScanner.stop();
-      } catch (_) {}
-      cameraRunning = false;
-    }
-  }
-
-  async function stopCameraScanner() {
-    if (html5CameraScanner && cameraRunning) {
-      try {
-        await html5CameraScanner.stop();
+        await populateCameraList();
+        return;
       } catch (error) {
-        console.warn("Camera stop error:", error);
+        lastError = error;
+        console.warn(`Camera attempt failed (${attempt.label}):`, error);
+
+        // Tear the instance down completely before another attempt.
+        await destroyCameraScanner();
+        await sleep(120);
       }
     }
 
     cameraRunning = false;
+    cameraTransitioning = false;
+    $("startCamera").disabled = false;
+    $("stopCamera").disabled = true;
+    $("cameraState").textContent = "Error";
+
+    const message = String(lastError?.message || lastError || "");
+    if (/overconstrained|constraint/i.test(message)) {
+      $("cameraMessage").textContent =
+        "The browser rejected the requested camera constraints. Try selecting another camera or close other apps using the camera.";
+    } else if (/transition/i.test(message)) {
+      $("cameraMessage").textContent =
+        "The camera scanner became stuck while changing state. Close the camera window, reopen it, and try again.";
+    } else if (/notallowed|permission|denied/i.test(message)) {
+      $("cameraMessage").textContent =
+        "Camera permission was denied. Allow camera access for this page and try again.";
+    } else if (/notfound|device/i.test(message)) {
+      $("cameraMessage").textContent =
+        "No usable camera was found. Try another browser or device.";
+    } else {
+      $("cameraMessage").textContent =
+        `Could not start camera: ${message || "unknown camera error"}`;
+    }
+
+    flashScreen("red");
+  }
+
+  async function stopCameraScanner() {
+    if (cameraTransitioning) return;
+
+    cameraTransitioning = true;
+    $("startCamera").disabled = true;
+    $("stopCamera").disabled = true;
+    $("cameraState").textContent = "Stopping…";
+
+    await destroyCameraScanner();
+
+    cameraRunning = false;
+    cameraTransitioning = false;
     $("cameraWrap").style.display = "none";
     $("startCamera").disabled = false;
     $("stopCamera").disabled = true;
     $("cameraState").textContent = "Stopped";
     $("cameraMessage").textContent = "Camera scanner stopped.";
+  }
+
+  async function destroyCameraScanner() {
+    if (!html5CameraScanner) return;
+
+    try {
+      if (html5CameraScanner.isScanning) {
+        await html5CameraScanner.stop();
+      }
+    } catch (error) {
+      console.warn("Camera stop during cleanup:", error);
+    }
+
+    try {
+      html5CameraScanner.clear();
+    } catch (error) {
+      console.warn("Camera clear during cleanup:", error);
+    }
+
+    html5CameraScanner = null;
+    cameraRunning = false;
+    $("cameraReader").innerHTML = "";
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   async function populateCameraList() {
@@ -2071,6 +2167,5 @@
 
 })();
 </script>
-
 
 </body></html>
