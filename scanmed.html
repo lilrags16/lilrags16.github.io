@@ -1,9 +1,7 @@
-<!doctype html>
-<html lang="en">
-<head>
+<html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Medical Barcode Inventory</title>
+<title>Medical Barcode Inventory - Fixed UI</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -232,11 +230,11 @@
           <div>
             <strong>Scan barcode</strong>
             <p class="small">Hardware scanner input is captured automatically.</p>
-            <div id="live" class="live" aria-live="polite" style="margin-top:7px">Waiting for scanâ¦</div>
+            <div id="live" class="live" aria-live="polite" style="margin-top:7px">Waiting for scan…</div>
           </div>
         </div>
         <div class="scan-actions">
-          <button id="cameraLaunch" class="primary icon-button" title="Open camera scanner" aria-label="Open camera scanner">ð·</button>
+          <button id="cameraLaunch" class="primary icon-button" title="Open camera scanner" aria-label="Open camera scanner">📷</button>
           <button id="manualLaunch" title="Manual barcode entry">Manual</button>
         </div>
       </div>
@@ -250,32 +248,32 @@
         </div>
 
         <div class="row" style="margin-top:8px">
-          <div><label>Internal ID</label><div id="lastInternalId" class="live">â</div></div>
-          <div><label>Item</label><div id="lastItemName" class="live">â</div></div>
-          <div><label>GTIN / UPC</label><div id="lastGtin" class="live">â</div></div>
-          <div><label>Lot</label><div id="lastLot" class="live">â</div></div>
+          <div><label>Internal ID</label><div id="lastInternalId" class="live">—</div></div>
+          <div><label>Item</label><div id="lastItemName" class="live">—</div></div>
+          <div><label>GTIN / UPC</label><div id="lastGtin" class="live">—</div></div>
+          <div><label>Lot</label><div id="lastLot" class="live">—</div></div>
         </div>
 
         <div class="details-wide">
           <div>
             <label>Expiration / Serial</label>
-            <div class="live"><span id="lastExpiration">â</span> Â· <span id="lastSerial">â</span></div>
+            <div class="live"><span id="lastExpiration">—</span> · <span id="lastSerial">—</span></div>
           </div>
           <div>
             <label>Decoded AIs</label>
-            <div id="lastAis" class="live">â</div>
+            <div id="lastAis" class="live">—</div>
           </div>
         </div>
 
         <details style="margin-top:8px">
           <summary>Raw barcode</summary>
-          <div id="lastRaw" class="live">â</div>
+          <div id="lastRaw" class="live">—</div>
         </details>
       </section>
   <div class="stats">
-    <div class="stat"><b id="totalScans">0</b><span>Total accepted scans</span></div>
-    <div class="stat"><b id="uniqueLots">0</b><span>Unique item/lot records</span></div>
-    <div class="stat"><b id="lastScan">â</b><span>Last scan time</span></div>
+    <div class="stat"><b id="totalScans">1</b><span>Total accepted scans</span></div>
+    <div class="stat"><b id="uniqueLots">1</b><span>Unique item/lot records</span></div>
+    <div class="stat"><b id="lastScan">06:56 PM</b><span>Last scan time</span></div>
   </div>
 
   <section class="card">
@@ -286,7 +284,7 @@
         <button id="copyCsv">Copy CSV</button>
         <button id="exportJson">Backup JSON</button>
         <button id="importJson">Restore JSON</button>
-        <input id="importFile" type="file" accept=".json,application/json" hidden>
+        <input id="importFile" type="file" accept=".json,application/json" hidden="">
         <button id="clearAll" class="danger">Clear all</button>
       </div>
     </div>
@@ -306,7 +304,27 @@
             <th></th>
           </tr>
         </thead>
-        <tbody id="tallyBody"></tbody>
+        <tbody id="tallyBody"><tr class="group-row">
+          <td><code>0001</code></td>
+          <td colspan="6">Test</td>
+          <td class="num"><strong>1</strong></td>
+          <td colspan="2"></td></tr><tr>
+        <td><code>0001</code></td>
+        <td>Test</td>
+        <td><code>00368462157138</code></td>
+        <td><span class="pill">19251871,</span></td>
+        <td>2027-05-31</td>
+        <td>C17WD6ET6C2C</td>
+        <td>8/10/2026, 6:56:03 PM</td>
+        <td>8/10/2026, 6:56:03 PM</td>
+        <td class="num"><strong>1</strong></td>
+        <td>
+          <div style="display:flex;gap:6px;align-items:center;min-width:190px">
+            <input type="text" inputmode="numeric" data-quantity="0001|00368462157138|19251871,|270531|C17WD6ET6C2C" placeholder="+1, -1, or 10" aria-label="Adjust quantity" style="width:115px">
+            <button data-apply-quantity="0001|00368462157138|19251871,|270531|C17WD6ET6C2C">Apply</button>
+            <button data-delete="0001|00368462157138|19251871,|270531|C17WD6ET6C2C" title="Delete this record">Delete</button>
+          </div>
+        </td></tr></tbody>
       </table>
     </div>
   </section>
@@ -328,14 +346,14 @@
           </div>
           <div>
             <label for="customTerminator">Custom</label>
-            <input id="customTerminator" maxlength="1" value=";" disabled>
+            <input id="customTerminator" maxlength="1" value=";" disabled="">
           </div>
         </div>
 
         <label for="timeout">Max key gap (ms)</label>
         <input id="timeout" type="number" min="20" max="2000" step="10" value="150">
 
-        <label class="check"><input id="requireFast" type="checkbox" checked> Ignore slow normal typing</label>
+        <label class="check"><input id="requireFast" type="checkbox" checked=""> Ignore slow normal typing</label>
         <label class="check"><input id="sound" type="checkbox"> Beep on accepted scan</label>
         <label class="check"><input id="includeSerial" type="checkbox"> Separate records by serial</label>
 
@@ -344,9 +362,9 @@
           <button id="manageCatalog" class="primary">Manage Item Catalog</button>
           <button id="exportConfig">Export Config</button>
           <button id="importConfig">Import Config</button>
-          <input id="importConfigFile" type="file" accept=".json,application/json" hidden>
+          <input id="importConfigFile" type="file" accept=".json,application/json" hidden="">
           <button id="importCatalogCsv">Import Items CSV</button>
-          <input id="importCatalogCsvFile" type="file" accept=".csv,text/csv" hidden>
+          <input id="importCatalogCsvFile" type="file" accept=".csv,text/csv" hidden="">
         </div>
       </section>
     </aside>
@@ -375,13 +393,13 @@
       </div>
       <div class="buttons">
         <button id="startCamera" class="primary">Start Camera</button>
-        <button id="stopCamera" disabled>Stop Camera</button>
-        <select id="cameraSelect" style="width:auto;min-width:190px" disabled>
+        <button id="stopCamera" disabled="">Stop Camera</button>
+        <select id="cameraSelect" style="width:auto;min-width:190px" disabled="">
           <option value="">Default camera</option>
         </select>
       </div>
       <div id="cameraWrap" class="camera-wrap" style="margin-top:14px;display:none">
-        <video id="cameraVideo" playsinline muted></video>
+        <video id="cameraVideo" playsinline="" muted=""></video>
         <div class="camera-overlay"><div class="camera-target"></div></div>
       </div>
       <div id="cameraMessage" class="small" style="margin-top:10px">Camera access generally requires HTTPS or localhost.</div>
@@ -397,27 +415,27 @@
     <div class="row" style="margin-top:10px">
       <div>
         <label>Lot</label>
-        <div id="unknownLot" class="live">â</div>
+        <div id="unknownLot" class="live">—</div>
       </div>
       <div>
         <label>Expiration</label>
-        <div id="unknownExpiration" class="live">â</div>
+        <div id="unknownExpiration" class="live">—</div>
       </div>
     </div>
 
     <div class="row">
       <div>
         <label>Serial</label>
-        <div id="unknownSerial" class="live">â</div>
+        <div id="unknownSerial" class="live">—</div>
       </div>
       <div>
         <label>Decoded AIs</label>
-        <div id="unknownAis" class="live">â</div>
+        <div id="unknownAis" class="live">—</div>
       </div>
     </div>
 
     <label>Raw barcode</label>
-    <div id="unknownRaw" class="live">â</div>
+    <div id="unknownRaw" class="live">—</div>
 
     <label for="unknownMode">Action</label>
     <select id="unknownMode">
@@ -430,7 +448,7 @@
       <select id="existingInternalId"></select>
     </div>
 
-    <div id="newItemFields" hidden>
+    <div id="newItemFields" hidden="">
       <div class="row">
         <div>
           <label for="newInternalId">Internal ID</label>
@@ -442,14 +460,14 @@
         </div>
       </div>
       <div class="buttons">
-        <label class="check"><input id="newRequiresLot" type="checkbox" checked> Require lot number</label>
-        <label class="check"><input id="newRequiresExpiration" type="checkbox" checked> Require expiration</label>
+        <label class="check"><input id="newRequiresLot" type="checkbox" checked=""> Require lot number</label>
+        <label class="check"><input id="newRequiresExpiration" type="checkbox" checked=""> Require expiration</label>
       </div>
     </div>
 
     <div class="modal-actions">
       <button id="cancelUnknown">Cancel Scan</button>
-      <button id="saveUnknown" class="primary">Save Association & Count Scan</button>
+      <button id="saveUnknown" class="primary">Save Association &amp; Count Scan</button>
     </div>
   </div>
 </dialog>
@@ -588,10 +606,6 @@
 
     return null;
   }
-
-  restoreSettings();
-  migrateLegacyRecords();
-  render();
 
   document.addEventListener("keydown", handleKeydown, true);
   window.addEventListener("pagehide", () => {
@@ -732,7 +746,7 @@
     buffer = "";
     lastKeyAt = 0;
     scanStartedAt = 0;
-    live.textContent = "Waiting for scanâ¦";
+    live.textContent = "Waiting for scan…";
   }
 
 
@@ -925,28 +939,28 @@
     lastScanDetails = { raw, parsed, internalId, state };
 
     $("lastScanState").textContent = state;
-    $("lastInternalId").textContent = internalId || "â";
-    $("lastItemName").textContent = item?.name || "â";
-    $("lastGtin").textContent = gtin || "â";
-    $("lastLot").textContent = parsed?.lot || "â";
-    $("lastExpiration").textContent = parsed?.expiration || parsed?.expirationRaw || "â";
-    $("lastSerial").textContent = parsed?.serial || "â";
+    $("lastInternalId").textContent = internalId || "—";
+    $("lastItemName").textContent = item?.name || "—";
+    $("lastGtin").textContent = gtin || "—";
+    $("lastLot").textContent = parsed?.lot || "—";
+    $("lastExpiration").textContent = parsed?.expiration || parsed?.expirationRaw || "—";
+    $("lastSerial").textContent = parsed?.serial || "—";
     $("lastAis").textContent = parsed?.values
-      ? Object.entries(parsed.values).map(([ai, value]) => `${ai}: ${value}`).join(" | ") || "â"
-      : "â";
-    $("lastRaw").textContent = raw ? visible(raw) : "â";
+      ? Object.entries(parsed.values).map(([ai, value]) => `${ai}: ${value}`).join(" | ") || "—"
+      : "—";
+    $("lastRaw").textContent = raw ? visible(raw) : "—";
   }
 
   function updateUnknownScanDetails(raw, parsed) {
     const gtin = parsed?.gtin || parsed?.item || "";
-    $("unknownGtinValue").textContent = `GTIN / UPC: ${gtin || "â"}`;
-    $("unknownLot").textContent = parsed?.lot || "â";
-    $("unknownExpiration").textContent = parsed?.expiration || parsed?.expirationRaw || "â";
-    $("unknownSerial").textContent = parsed?.serial || "â";
+    $("unknownGtinValue").textContent = `GTIN / UPC: ${gtin || "—"}`;
+    $("unknownLot").textContent = parsed?.lot || "—";
+    $("unknownExpiration").textContent = parsed?.expiration || parsed?.expirationRaw || "—";
+    $("unknownSerial").textContent = parsed?.serial || "—";
     $("unknownAis").textContent = parsed?.values
-      ? Object.entries(parsed.values).map(([ai, value]) => `${ai}: ${value}`).join(" | ") || "â"
-      : "â";
-    $("unknownRaw").textContent = raw ? visible(raw) : "â";
+      ? Object.entries(parsed.values).map(([ai, value]) => `${ai}: ${value}`).join(" | ") || "—"
+      : "—";
+    $("unknownRaw").textContent = raw ? visible(raw) : "—";
   }
 
   function flashScreen(kind, duration = 260) {
@@ -1196,7 +1210,8 @@
       const ra = a[1], rb = b[1];
       const aid = ra.internalId || "";
       const bid = rb.internalId || "";
-      return aid.localeCompare(bid) || rb.lastScanned.localeCompare(ra.lastScanned);
+      return aid.localeCompare(bid) ||
+        String(rb.lastScanned || "").localeCompare(String(ra.lastScanned || ""));
     });
 
     tallyBody.innerHTML = "";
@@ -1231,11 +1246,11 @@
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td><code>${escapeHtml(r.internalId || "")}</code></td>
-        <td>${escapeHtml(itemName || "â")}</td>
+        <td>${escapeHtml(itemName || "—")}</td>
         <td><code>${escapeHtml(r.gtin || r.item || "")}</code></td>
         <td><span class="pill">${escapeHtml(r.lot)}</span></td>
-        <td>${escapeHtml(r.expiration || "â")}</td>
-        <td>${escapeHtml(r.serial || "â")}</td>
+        <td>${escapeHtml(r.expiration || "—")}</td>
+        <td>${escapeHtml(r.serial || "—")}</td>
         <td>${formatTimestamp(r.firstScanned)}</td>
         <td>${formatTimestamp(r.lastScanned)}</td>
         <td class="num"><strong>${Number(r.count) || 0}</strong></td>
@@ -1283,10 +1298,17 @@
     $("uniqueLots").textContent = entries.length;
 
     if (entries.length) {
-      const latest = entries.reduce((v,[,r]) => !v || r.lastScanned > v ? r.lastScanned : v, "");
-      $("lastScan").textContent = new Date(latest).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+      const latest = entries.reduce((v,[,r]) => {
+        const stamp = String(r.lastScanned || r.firstScanned || "");
+        return !v || stamp > v ? stamp : v;
+      }, "");
+      const latestDate = latest ? new Date(latest) : null;
+      $("lastScan").textContent =
+        latestDate && !Number.isNaN(latestDate.valueOf())
+          ? latestDate.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})
+          : "—";
     } else {
-      $("lastScan").textContent = "â";
+      $("lastScan").textContent = "—";
     }
   }
 
@@ -1328,7 +1350,11 @@
   function buildCsv() {
     const rows = [["Internal ID","Item Name","GTIN","Lot","Expiration","Serial","First Scanned","Last Scanned","Count","Last Raw Barcode"]];
     Object.values(records)
-      .sort((a,b) => (a.internalId || "").localeCompare(b.internalId || "") || (a.gtin || "").localeCompare(b.gtin || "") || a.lot.localeCompare(b.lot))
+      .sort((a,b) =>
+        String(a.internalId || "").localeCompare(String(b.internalId || "")) ||
+        String(a.gtin || a.item || "").localeCompare(String(b.gtin || b.item || "")) ||
+        String(a.lot || "").localeCompare(String(b.lot || ""))
+      )
       .forEach(r => rows.push([
         r.internalId || "",
         catalog.items[r.internalId]?.name || r.itemName || "",
@@ -1398,6 +1424,33 @@
     }
   }
 
+
+
+  function normalizeRecords(value) {
+    const out = {};
+    if (!value || typeof value !== "object" || Array.isArray(value)) return out;
+
+    for (const [key, raw] of Object.entries(value)) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+
+      const record = { ...raw };
+      record.internalId = String(record.internalId || "");
+      record.item = String(record.item || record.gtin || "");
+      record.gtin = String(record.gtin || record.item || "");
+      record.itemName = String(record.itemName || "");
+      record.lot = String(record.lot || "");
+      record.expiration = String(record.expiration || "");
+      record.expirationRaw = String(record.expirationRaw || "");
+      record.serial = String(record.serial || "");
+      record.firstScanned = String(record.firstScanned || "");
+      record.lastScanned = String(record.lastScanned || record.firstScanned || "");
+      record.count = Math.max(0, Number(record.count) || 0);
+      record.lastRaw = String(record.lastRaw || "");
+
+      out[key] = record;
+    }
+    return out;
+  }
 
   function migrateLegacyRecords() {
     const migrated = {};
@@ -1476,7 +1529,7 @@
       : "";
 
     setStatus(
-      `Accepted: ${itemName || internalId} â GTIN ${gtin}${parsed.lot ? ", lot " + parsed.lot : ""}, count ${records[key].count}.${decodedAIs ? " AIs: " + decodedAIs + "." : ""}${skipped}`,
+      `Accepted: ${itemName || internalId} — GTIN ${gtin}${parsed.lot ? ", lot " + parsed.lot : ""}, count ${records[key].count}.${decodedAIs ? " AIs: " + decodedAIs + "." : ""}${skipped}`,
       skipped ? "warn" : "good"
     );
     live.textContent = visible(raw);
@@ -1494,7 +1547,7 @@
     for (const internalId of ids) {
       const option = document.createElement("option");
       option.value = internalId;
-      option.textContent = `${internalId} â ${catalog.items[internalId].name || "Unnamed item"}`;
+      option.textContent = `${internalId} — ${catalog.items[internalId].name || "Unnamed item"}`;
       select.appendChild(option);
     }
 
@@ -1745,7 +1798,7 @@
     $("quickInternalId").value = "";
     $("quickInternalName").value = "";
     renderCatalog();
-    setStatus(`Created ${id} â ${name}.`, "good");
+    setStatus(`Created ${id} — ${name}.`, "good");
   }
 
   function addCatalogItem() {
@@ -1939,11 +1992,11 @@
   }
 
   function visible(text) {
-    return String(text).replaceAll(GS, "â");
+    return String(text).replaceAll(GS, "␝");
   }
 
   function formatTimestamp(value) {
-    if (!value) return "â";
+    if (!value) return "—";
     const d = new Date(value);
     return Number.isNaN(d.valueOf()) ? escapeHtml(value) : d.toLocaleString();
   }
@@ -1983,7 +2036,24 @@
     return String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   }
   function escapeAttr(value) { return escapeHtml(value); }
+  function initializeApplication() {
+    try {
+      records = normalizeRecords(records);
+      catalog = normalizeCatalog(catalog);
+      restoreSettings();
+      migrateLegacyRecords();
+      render();
+    } catch (error) {
+      console.error("Application initialization failed:", error);
+      // Keep controls alive even if legacy saved data contains something unexpected.
+      setStatus(`Saved data could not be fully loaded: ${error.message || error}. Controls remain available so you can export/import or correct the configuration.`, "bad");
+    }
+  }
+
+  initializeApplication();
+
 })();
 </script>
-</body>
-</html>
+
+
+</body></html>
