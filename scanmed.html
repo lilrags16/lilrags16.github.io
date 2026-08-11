@@ -1,7 +1,7 @@
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Medical Barcode Inventory - Fixed UI</title>
+<title>Medical Barcode Inventory</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -363,6 +363,7 @@
           <button id="exportConfig">Export Config</button>
           <button id="importConfig">Import Config</button>
           <input id="importConfigFile" type="file" accept=".json,application/json" hidden="">
+          <button id="exportItemsCsv">Export Items CSV</button>
           <button id="importCatalogCsv">Import Items CSV</button>
           <input id="importCatalogCsvFile" type="file" accept=".csv,text/csv" hidden="">
         </div>
@@ -398,11 +399,10 @@
           <option value="">Default camera</option>
         </select>
       </div>
-      <div id="cameraWrap" class="camera-wrap" style="margin-top:14px;display:none">
-        <video id="cameraVideo" playsinline="" muted=""></video>
-        <div class="camera-overlay"><div class="camera-target"></div></div>
+      <div id="cameraWrap" class="camera-wrap" style="margin-top:14px;display:none;min-height:260px">
+        <div id="cameraReader" style="width:100%;min-height:260px;background:#000"></div>
       </div>
-      <div id="cameraMessage" class="small" style="margin-top:10px">Camera access generally requires HTTPS or localhost.</div>
+      <div id="cameraMessage" class="small" style="margin-top:10px">Camera access generally requires HTTPS or localhost. Uses html5-qrcode with its ZXing-based decoder.</div>
       <div class="modal-actions"><button id="closeCamera">Close</button></div>
     </div>
   </dialog>
@@ -512,6 +512,7 @@
 
 </main>
 
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 (() => {
   "use strict";
@@ -532,13 +533,10 @@
   let pendingUnknownScan = null;
   let lastScanDetails = null;
 
-  let cameraStream = null;
-  let cameraDetector = null;
+  let html5CameraScanner = null;
   let cameraRunning = false;
-  let cameraFrameRequest = 0;
   let lastCameraValue = "";
   let lastCameraSeenAt = 0;
-  let cameraBusy = false;
 
   let buffer = "";
   let lastKeyAt = 0;
@@ -609,8 +607,8 @@
 
   document.addEventListener("keydown", handleKeydown, true);
   window.addEventListener("pagehide", () => {
-    if (cameraStream) {
-      for (const track of cameraStream.getTracks()) track.stop();
+    if (cameraRunning && html5CameraScanner) {
+      html5CameraScanner.stop().catch(() => {});
     }
   });
   scanner.addEventListener("focus", () => scanner.classList.add("active"));
@@ -658,6 +656,7 @@
   $("exportConfig").addEventListener("click", exportConfig);
   $("importConfig").addEventListener("click", () => $("importConfigFile").click());
   $("importConfigFile").addEventListener("change", importConfig);
+  $("exportItemsCsv").addEventListener("click", exportItemsCsv);
   $("importCatalogCsv").addEventListener("click", () => $("importCatalogCsvFile").click());
   $("importCatalogCsvFile").addEventListener("change", importCatalogCsv);
 
@@ -755,103 +754,114 @@
   async function startCameraScanner(deviceId = null) {
     if (cameraRunning) return;
 
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      $("cameraState").textContent = "Unavailable";
-      $("cameraMessage").textContent = "This browser does not provide camera access through getUserMedia().";
-      flashScreen("red");
-      return;
-    }
-
-    if (!("BarcodeDetector" in window)) {
-      $("cameraState").textContent = "Unsupported";
+    if (typeof Html5Qrcode === "undefined") {
+      $("cameraState").textContent = "Library error";
       $("cameraMessage").textContent =
-        "This browser does not support the native BarcodeDetector API. Keyboard/USB scanner input still works.";
+        "The html5-qrcode scanner library could not be loaded. Check the network connection and reload the page.";
       flashScreen("red");
       return;
     }
 
     try {
-      const supported = await BarcodeDetector.getSupportedFormats();
-      const preferred = [
-        "data_matrix", "qr_code", "upc_a", "upc_e",
-        "ean_13", "ean_8", "code_128", "code_39", "itf"
-      ].filter(format => supported.includes(format));
+      const formats = [
+        Html5QrcodeSupportedFormats.DATA_MATRIX,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.ITF
+      ];
 
-      cameraDetector = new BarcodeDetector({
-        formats: preferred.length ? preferred : supported
-      });
+      if (!html5CameraScanner) {
+        html5CameraScanner = new Html5Qrcode(
+          "cameraReader",
+          {
+            formatsToSupport: formats,
+            verbose: false,
+            // Force the library's ZXing-based decoder instead of the browser
+            // BarcodeDetector implementation that the previous build used.
+            useBarCodeDetectorIfSupported: false
+          }
+        );
+      }
 
-      const constraints = {
-        audio: false,
-        video: deviceId
-          ? { deviceId: { exact: deviceId } }
-          : {
-              facingMode: { ideal: "environment" },
-              width: { ideal: 1920 },
-              height: { ideal: 1080 }
-            }
+      $("cameraWrap").style.display = "block";
+      $("cameraState").textContent = "Starting…";
+      $("cameraMessage").textContent = "Requesting camera access…";
+
+      const cameraConfig = deviceId
+        ? { deviceId: { exact: deviceId } }
+        : { facingMode: "environment" };
+
+      const scanConfig = {
+        fps: 12,
+        qrbox: (viewfinderWidth, viewfinderHeight) => {
+          const width = Math.floor(Math.min(viewfinderWidth * 0.88, 520));
+          const height = Math.floor(Math.min(viewfinderHeight * 0.55, 280));
+          return { width: Math.max(180, width), height: Math.max(120, height) };
+        },
+        aspectRatio: 4 / 3,
+        disableFlip: false
       };
 
-      cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
-      const video = $("cameraVideo");
-      video.srcObject = cameraStream;
-      await video.play();
+      await html5CameraScanner.start(
+        cameraConfig,
+        scanConfig,
+        onCameraScanSuccess,
+        () => {}
+      );
 
       cameraRunning = true;
-      cameraBusy = false;
-      $("cameraWrap").style.display = "block";
       $("startCamera").disabled = true;
       $("stopCamera").disabled = false;
       $("cameraState").textContent = "Scanning";
       $("cameraMessage").textContent =
-        "Point the camera at the barcode and hold it steady inside the box.";
+        "Point the camera at a barcode. Data Matrix, UPC/EAN, Code 128, QR, and common 1D formats are enabled.";
 
       await populateCameraList();
-      cameraFrameRequest = requestAnimationFrame(cameraScanLoop);
     } catch (error) {
-      console.error(error);
+      console.error("Camera start error:", error);
       $("cameraState").textContent = "Error";
-      $("cameraMessage").textContent = `Could not start camera: ${error.message || error}`;
+      $("cameraMessage").textContent = `Could not start camera: ${error?.message || error}`;
+      $("startCamera").disabled = false;
+      $("stopCamera").disabled = true;
       flashScreen("red");
-      await stopCameraScanner();
+
+      try {
+        if (html5CameraScanner?.isScanning) await html5CameraScanner.stop();
+      } catch (_) {}
+      cameraRunning = false;
     }
   }
 
   async function stopCameraScanner() {
+    if (html5CameraScanner && cameraRunning) {
+      try {
+        await html5CameraScanner.stop();
+      } catch (error) {
+        console.warn("Camera stop error:", error);
+      }
+    }
+
     cameraRunning = false;
-    cameraBusy = false;
-
-    if (cameraFrameRequest) {
-      cancelAnimationFrame(cameraFrameRequest);
-      cameraFrameRequest = 0;
-    }
-
-    if (cameraStream) {
-      for (const track of cameraStream.getTracks()) track.stop();
-      cameraStream = null;
-    }
-
-    const video = $("cameraVideo");
-    video.pause();
-    video.srcObject = null;
-
     $("cameraWrap").style.display = "none";
     $("startCamera").disabled = false;
     $("stopCamera").disabled = true;
     $("cameraState").textContent = "Stopped";
+    $("cameraMessage").textContent = "Camera scanner stopped.";
   }
 
   async function populateCameraList() {
     try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cameras = devices.filter(device => device.kind === "videoinput");
+      const cameras = await Html5Qrcode.getCameras();
       const select = $("cameraSelect");
-      const activeTrack = cameraStream?.getVideoTracks()?.[0];
-      const activeId = activeTrack?.getSettings()?.deviceId || "";
-
+      const previous = select.value;
       select.innerHTML = "";
 
-      if (!cameras.length) {
+      if (!cameras || !cameras.length) {
         const option = document.createElement("option");
         option.value = "";
         option.textContent = "Default camera";
@@ -862,74 +872,41 @@
 
       cameras.forEach((camera, index) => {
         const option = document.createElement("option");
-        option.value = camera.deviceId;
+        option.value = camera.id;
         option.textContent = camera.label || `Camera ${index + 1}`;
-        option.selected = camera.deviceId === activeId;
+        if (camera.id === previous) option.selected = true;
         select.appendChild(option);
       });
 
       select.disabled = cameras.length <= 1;
-    } catch (_) {
+    } catch (error) {
+      console.warn("Could not enumerate cameras:", error);
       $("cameraSelect").disabled = true;
     }
   }
 
-  async function cameraScanLoop() {
-    if (!cameraRunning) return;
+  function onCameraScanSuccess(decodedText, decodedResult) {
+    const rawValue = String(decodedText || "");
+    if (!rawValue || pendingUnknownScan) return;
 
-    const video = $("cameraVideo");
-
-    if (!cameraBusy && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-      cameraBusy = true;
-
-      try {
-        const detected = await cameraDetector.detect(video);
-
-        if (detected && detected.length) {
-          const best = chooseBestCameraBarcode(detected);
-          const rawValue = best?.rawValue || "";
-
-          if (rawValue) {
-            const now = Date.now();
-            const isRepeat = rawValue === lastCameraValue && now - lastCameraSeenAt < 1800;
-
-            if (!isRepeat && !pendingUnknownScan) {
-              lastCameraValue = rawValue;
-              lastCameraSeenAt = now;
-              $("cameraMessage").textContent =
-                `Detected ${best.format || "barcode"}: ${visible(rawValue)}`;
-              processScan(rawValue);
-            } else if (rawValue === lastCameraValue) {
-              lastCameraSeenAt = now;
-            }
-          }
-        }
-      } catch (error) {
-        console.warn("Camera barcode detection error:", error);
-      } finally {
-        cameraBusy = false;
-      }
+    const now = Date.now();
+    if (rawValue === lastCameraValue && now - lastCameraSeenAt < 1800) {
+      lastCameraSeenAt = now;
+      return;
     }
 
-    if (cameraRunning) cameraFrameRequest = requestAnimationFrame(cameraScanLoop);
-  }
+    lastCameraValue = rawValue;
+    lastCameraSeenAt = now;
 
-  function chooseBestCameraBarcode(barcodes) {
-    const ranking = {
-      data_matrix: 1,
-      code_128: 2,
-      qr_code: 3,
-      upc_a: 4,
-      upc_e: 5,
-      ean_13: 6,
-      ean_8: 7,
-      itf: 8,
-      code_39: 9
-    };
+    const formatName =
+      decodedResult?.result?.format?.formatName ||
+      decodedResult?.decodedResult?.format?.formatName ||
+      "barcode";
 
-    return [...barcodes].sort((a, b) =>
-      (ranking[a.format] || 99) - (ranking[b.format] || 99)
-    )[0];
+    $("cameraMessage").textContent =
+      `Detected ${formatName}: ${visible(rawValue)}`;
+
+    processScan(rawValue);
   }
 
   function updateLastScanPanel(raw, parsed, internalId = "", state = "Decoded") {
@@ -1814,6 +1791,36 @@
   }
 
 
+  function exportItemsCsv() {
+    const rows = [[
+      "Internal ID",
+      "Name",
+      "Lot Required",
+      "Expiration Required",
+      "GTINs"
+    ]];
+
+    for (const internalId of Object.keys(catalog.items).sort()) {
+      const item = catalog.items[internalId] || {};
+      const gtins = Object.entries(catalog.gtinToInternalId)
+        .filter(([, mappedId]) => mappedId === internalId)
+        .map(([gtin]) => gtin)
+        .sort();
+
+      rows.push([
+        internalId,
+        item.name || "",
+        item.requiresLot !== false ? "Yes" : "No",
+        item.requiresExpiration !== false ? "Yes" : "No",
+        gtins.join(";")
+      ]);
+    }
+
+    const csv = rows.map(row => row.map(csvCell).join(",")).join("\r\n");
+    download("medical-barcode-items.csv", "\ufeff" + csv, "text/csv;charset=utf-8");
+    setStatus(`Exported ${rows.length - 1} catalog item${rows.length === 2 ? "" : "s"} to CSV.`, "good");
+  }
+
   async function importCatalogCsv(event) {
     const file = event.target.files[0];
     event.target.value = "";
@@ -1829,6 +1836,7 @@
       const nameIndex = header.findIndex(v => ["name","item name","item_name"].includes(v));
       const lotIndex = header.findIndex(v => ["lot required","requires lot","requires_lot"].includes(v));
       const expIndex = header.findIndex(v => ["expiration required","requires expiration","requires_expiration","expiry required"].includes(v));
+      const gtinIndex = header.findIndex(v => ["gtin","gtins","upc","upcs","barcodes"].includes(v));
 
       if (idIndex < 0 || nameIndex < 0) {
         throw new Error('CSV must contain "Internal ID" and "Name" columns.');
@@ -1847,6 +1855,15 @@
           requiresLot: lotIndex >= 0 ? parseCsvBoolean(row[lotIndex], existing.requiresLot ?? true) : (existing.requiresLot ?? true),
           requiresExpiration: expIndex >= 0 ? parseCsvBoolean(row[expIndex], existing.requiresExpiration ?? true) : (existing.requiresExpiration ?? true)
         };
+
+        if (gtinIndex >= 0 && row[gtinIndex]) {
+          const gtins = String(row[gtinIndex])
+            .split(/[;|\s]+/)
+            .map(v => v.trim())
+            .filter(Boolean);
+          for (const gtin of gtins) catalog.gtinToInternalId[gtin] = id;
+        }
+
         imported++;
       }
 
