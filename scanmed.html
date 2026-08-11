@@ -555,6 +555,9 @@
 </main>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://gs1.github.io/GS1DigitalLinkCompressionPrototype/src/GS1DigitalLinkToolkit.js"></script>
+<script src="https://gs1.github.io/interpretGS1scan/interpretGS1Scan.js"></script>
+<script src="https://gs1.github.io/interpretGS1scan/plausibleGS1DL.js"></script>
 <script>
 (() => {
   "use strict";
@@ -585,69 +588,6 @@
   let buffer = "";
   let lastKeyAt = 0;
   let scanStartedAt = 0;
-
-  // Common GS1 Application Identifiers. Dynamic families such as 310n
-  // are handled by getAISpec() below.
-  const fixedAIs = {
-    "00": 18, "01": 14, "02": 14,
-    "11": 6, "12": 6, "13": 6, "15": 6, "16": 6, "17": 6,
-    "20": 2,
-    "402": 17,
-    "410": 13, "411": 13, "412": 13, "413": 13, "414": 13,
-    "415": 13, "416": 13, "417": 13,
-    "422": 3, "424": 3, "425": 3, "426": 3,
-    "7001": 13, "7003": 10, "7006": 6,
-    "8001": 14, "8005": 6, "8006": 18, "8017": 18, "8018": 18,
-    "8100": 6, "8101": 10, "8102": 2, "8111": 4
-  };
-
-  const variableAIs = {
-    "10": 20, "21": 20, "22": 29,
-    "235": 28,
-    "240": 30, "241": 30, "242": 6, "243": 20,
-    "250": 30, "251": 30, "253": 30, "254": 20, "255": 25,
-    "30": 8, "37": 8,
-    "400": 30, "401": 30, "403": 30,
-    "420": 20, "421": 15, "423": 15,
-    "427": 3,
-    "7002": 30, "7004": 4, "7005": 12, "7007": 12,
-    "7008": 3, "7009": 10, "7010": 2, "7020": 20, "7021": 20,
-    "7022": 20, "7023": 30, "7040": 4,
-    "710": 20, "711": 20, "712": 20, "713": 20, "714": 20,
-    "715": 20,
-    "8002": 20, "8003": 30, "8004": 30, "8007": 34,
-    "8008": 12, "8009": 50, "8010": 30, "8011": 12,
-    "8012": 20, "8013": 30, "8019": 10, "8020": 25,
-    "8026": 18,
-    "8110": 70, "8112": 70, "8200": 70
-  };
-
-  function getAISpec(s, index) {
-    for (const len of [4, 3, 2]) {
-      const ai = s.slice(index, index + len);
-      if (fixedAIs[ai] != null) return { ai, fixed: true, length: fixedAIs[ai] };
-      if (variableAIs[ai] != null) return { ai, fixed: false, maxLength: variableAIs[ai] };
-    }
-
-    const ai4 = s.slice(index, index + 4);
-
-    if (/^(31|32|33|34|35|36)\d{2}$/.test(ai4)) {
-      return { ai: ai4, fixed: true, length: 6 };
-    }
-    if (/^390\d$/.test(ai4) || /^392\d$/.test(ai4)) {
-      return { ai: ai4, fixed: false, maxLength: 15 };
-    }
-    if (/^391\d$/.test(ai4) || /^393\d$/.test(ai4)) {
-      return { ai: ai4, fixed: false, maxLength: 18 };
-    }
-    if (/^394\d$/.test(ai4)) return { ai: ai4, fixed: true, length: 4 };
-    if (/^395\d$/.test(ai4)) return { ai: ai4, fixed: true, length: 6 };
-    if (/^703\d$/.test(ai4) || /^723\d$/.test(ai4)) {
-      return { ai: ai4, fixed: false, maxLength: 30 };
-    }
-
-    return null;
-  }
 
   document.addEventListener("keydown", handleKeydown, true);
   window.addEventListener("pagehide", () => {
@@ -693,8 +633,9 @@
     $("customTerminator").disabled = $("terminator").value !== "custom";
   });
 
-  $("processManual").addEventListener("click", () => {
-    processScan($("manual").value.trim());
+  $("processManual").addEventListener("click", async () => {
+    const value = $("manual").value.trim();
+    await processScan(value);
     $("manualDialog").close();
     $("manual").value = "";
     scanner.focus();
@@ -782,7 +723,7 @@
 
     if (terminatorHit) {
       event.preventDefault();
-      if (buffer) processScan(buffer);
+      if (buffer) void processScan(buffer);
       resetBuffer();
       return;
     }
@@ -1074,7 +1015,7 @@
     $("cameraMessage").textContent =
       `Detected ${formatName}: ${visible(rawValue)}`;
 
-    processScan(rawValue);
+    void processScan(rawValue);
   }
 
   function updateLastScanPanel(raw, parsed, internalId = "", state = "Decoded") {
@@ -1091,8 +1032,14 @@
     $("lastExpiration").textContent = parsed?.expiration || parsed?.expirationRaw || "—";
     $("lastSerial").textContent = parsed?.serial || "—";
     $("lastAis").textContent = parsed?.values
-      ? Object.entries(parsed.values).map(([ai, value]) => `${ai}: ${value}`).join(" | ") || "—"
+      ? Object.entries(parsed.values)
+          .map(([ai, value]) => `${ai}${parsed.labels?.[ai] ? " (" + parsed.labels[ai] + ")" : ""}: ${value}`)
+          .join(" | ") || "—"
       : "—";
+
+    if (parsed?.recovered) {
+      $("lastAis").textContent += ` | ⚠ ${parsed.recoveryMessage}`;
+    }
     $("lastRaw").textContent = raw ? visible(raw) : "—";
   }
 
@@ -1103,8 +1050,13 @@
     $("unknownExpiration").textContent = parsed?.expiration || parsed?.expirationRaw || "—";
     $("unknownSerial").textContent = parsed?.serial || "—";
     $("unknownAis").textContent = parsed?.values
-      ? Object.entries(parsed.values).map(([ai, value]) => `${ai}: ${value}`).join(" | ") || "—"
+      ? Object.entries(parsed.values)
+          .map(([ai, value]) => `${ai}${parsed.labels?.[ai] ? " (" + parsed.labels[ai] + ")" : ""}: ${value}`)
+          .join(" | ") || "—"
       : "—";
+    if (parsed?.recovered) {
+      $("unknownAis").textContent += ` | ⚠ ${parsed.recoveryMessage}`;
+    }
     $("unknownRaw").textContent = raw ? visible(raw) : "—";
   }
 
@@ -1268,7 +1220,7 @@
     scanner.focus();
   }
 
-  function processScan(rawInput) {
+  async function processScan(rawInput) {
     const raw = normalizeScannerText(rawInput);
     if (!raw) {
       updateLastScanPanel("", {}, "", "Invalid");
@@ -1288,10 +1240,13 @@
       }
     }
 
-    const parsed = parseBarcode(raw);
+    const parsed = await parseBarcode(raw);
     updateLastScanPanel(raw, parsed, "", "Decoded");
     if (!parsed.gtin && !parsed.item) {
-      setStatus(`Barcode could not be decoded (${raw.length} characters). Expected a GS1 GTIN or UPC/EAN item code.`, "bad");
+      setStatus(
+        `Barcode could not be decoded (${raw.length} characters). ${parsed.parserError || "Expected valid GS1 data or a UPC/EAN."}`,
+        "bad"
+      );
       flashScreen("red");
       return;
     }
@@ -1337,127 +1292,169 @@
       .replace(/<GS>|\{GS\}|\[GS\]/gi, GS);
   }
 
-  function parseBarcode(raw) {
-    // Human-readable parenthesized GS1: (01)...(17)...(10)...
-    if (/\(\d{2,4}\)/.test(raw)) return parseParenthesized(raw);
+  async function parseBarcode(raw) {
+    const normalized = normalizeScannerText(raw);
 
-    // GS1 Digital Link URI, when scanners emit the URL text.
-    if (/^https?:\/\//i.test(raw)) {
-      try {
-        const url = new URL(raw);
-        const parts = url.pathname.split("/").filter(Boolean);
-        const values = {};
-        for (let i = 0; i + 1 < parts.length; i += 2) values[parts[i]] = decodeURIComponent(parts[i + 1]);
-        for (const [k, v] of url.searchParams.entries()) values[k] = v;
-        return resultFromAIs(values, raw);
-      } catch (_) {}
+    // Use GS1's own interpretation library as the primary decoder.
+    const primary = await parseWithGs1Library(normalized);
+
+    // IMPORTANT: a malformed element string can still be "valid" to a strict
+    // parser when AI 10 is present, because AI 10 is variable-length. In that
+    // case the parser may consume a trailing 17YYMMDD as part of the lot rather
+    // than reporting an error. Therefore, if AI 17 is absent, also test whether
+    // the raw scan contains an unambiguous missing-FNC1 expiration suffix.
+    if (primary.ok && primary.result.expirationRaw) {
+      return primary.result;
     }
 
-    return parseElementString(raw);
-  }
-
-  function parseParenthesized(raw) {
-    const values = {};
-    const re = /\((\d{2,4})\)([^()]*)/g;
-    let match;
-    while ((match = re.exec(raw)) !== null) values[match[1]] = match[2].replaceAll(GS, "");
-    return resultFromAIs(values, raw);
-  }
-
-  function parseElementString(raw) {
-    let s = raw
-      .replace(/\u001d/g, GS)
-      .replace(/\s+/g, "");
-
-    const values = {};
-    const unknown = [];
-    let i = 0;
-
-    if (/^\d{8}$|^\d{12,14}$/.test(s)) {
-      return { item: s, gtin: padGtin(s), lot: "", expiration: "", expirationRaw: "", serial: "", raw };
+    const recovered = recoverMissingFnc1BeforeExpiration(normalized);
+    if (recovered && recovered !== normalized) {
+      const second = await parseWithGs1Library(recovered);
+      if (second.ok && second.result.expirationRaw) {
+        second.result.recovered = true;
+        second.result.recoveryMessage =
+          "Recovered malformed GS1 data by inserting a missing FNC1 separator before AI 17.";
+        second.result.originalRaw = normalized;
+        second.result.recoveredRaw = recovered;
+        return second.result;
+      }
     }
 
-    while (i < s.length) {
-      if (s[i] === GS) {
-        i++;
-        continue;
+    // If the primary parse succeeded and no unambiguous recovery was possible,
+    // keep the standards-compliant result.
+    if (primary.ok) return primary.result;
+
+    // Plain UPC/EAN fallback only if the GS1 library itself is unavailable.
+    if (/^\d{8}$|^\d{12,14}$/.test(normalized)) {
+      return {
+        item: padGtin(normalized),
+        gtin: padGtin(normalized),
+        lot: "",
+        expirationRaw: "",
+        expiration: "",
+        serial: "",
+        values: {"01": padGtin(normalized)},
+        labels: {"01": "GTIN"},
+        parser: "UPC/EAN fallback",
+        parserError: primary.error || ""
+      };
+    }
+
+    return {
+      item: "",
+      gtin: "",
+      lot: "",
+      expirationRaw: "",
+      expiration: "",
+      serial: "",
+      values: {},
+      labels: {},
+      parser: "GS1 interpretGS1scan",
+      parserError: primary.error || "Barcode could not be interpreted as valid GS1 data."
+    };
+  }
+
+  async function parseWithGs1Library(scan) {
+    if (typeof interpretScan !== "function") {
+      return {
+        ok: false,
+        error: "GS1 interpretGS1scan library did not load."
+      };
+    }
+
+    try {
+      const interpreted = await interpretScan(scan);
+
+      if (!interpreted || interpreted.errmsg !== undefined) {
+        return {
+          ok: false,
+          error: String(interpreted?.errmsg || "GS1 parser rejected the barcode.")
+        };
       }
 
-      const spec = getAISpec(s, i);
-      if (!spec) {
-        const recovery = findNextRecognizableAI(s, i + 1);
-        if (recovery < 0) {
-          unknown.push(s.slice(i));
-          break;
+      const values = {};
+      const labels = {};
+
+      for (const element of interpreted.ol || []) {
+        if (!element || element.ai == null) continue;
+        const ai = String(element.ai);
+        values[ai] = String(element.value ?? "");
+        labels[ai] = String(element.label ?? "");
+      }
+
+      const gtin = values["01"] || values["02"] || "";
+      const expirationRaw = values["17"] || "";
+
+      return {
+        ok: true,
+        result: {
+          item: gtin,
+          gtin,
+          lot: values["10"] || "",
+          expirationRaw,
+          expiration: formatGs1Date(expirationRaw),
+          serial: values["21"] || "",
+          values,
+          labels,
+          parser: "GS1 interpretGS1scan",
+          aiBrackets: interpreted.AIbrackets || "",
+          aiFnc1: interpreted.AIfnc1 || "",
+          digitalLink: interpreted.dl || "",
+          recovered: false
         }
-        unknown.push(s.slice(i, recovery));
-        i = recovery;
-        continue;
-      }
-
-      i += spec.ai.length;
-
-      if (spec.fixed) {
-        if (i + spec.length > s.length) {
-          unknown.push(spec.ai + s.slice(i));
-          break;
-        }
-        values[spec.ai] = s.slice(i, i + spec.length);
-        i += spec.length;
-        continue;
-      }
-
-      let end = s.indexOf(GS, i);
-      if (end < 0) {
-        end = Math.min(s.length, i + spec.maxLength);
-        const inferred = findFollowingAIWithoutSeparator(s, i, end);
-        if (inferred >= 0) end = inferred;
-      }
-
-      values[spec.ai] = s.slice(i, end);
-      i = end;
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: String(error?.message || error || "Unknown GS1 parser error")
+      };
     }
-
-    const result = resultFromAIs(values, raw);
-    result.unknownSegments = unknown;
-    return result;
   }
 
-  function findNextRecognizableAI(s, start) {
-    for (let p = start; p < s.length; p++) {
-      if (s[p] === GS) return p + 1;
-      if (getAISpec(s, p)) return p;
-    }
-    return -1;
-  }
+  function recoverMissingFnc1BeforeExpiration(scan) {
+    // Only attempt recovery on raw element strings, not bracketed syntax or URLs.
+    if (!scan || scan.includes("(") || /^https?:\/\//i.test(scan)) return null;
 
-  function findFollowingAIWithoutSeparator(s, start, limit) {
-    const dateCandidates = [];
+    let s = scan;
+    if (/^\](?:d2|C1|Q3)/i.test(s)) s = s.slice(3);
 
-    for (let p = start + 1; p < limit; p++) {
-      const spec = getAISpec(s, p);
-      if (!spec || !spec.fixed) continue;
+    // This recovery is intentionally narrow: AI 01 followed by AI 10.
+    // AI 01 is fixed at 14 digits, while AI 10 is variable up to 20 characters.
+    if (!/^01\d{14}10/.test(s)) return null;
 
-      const payload = s.slice(p + spec.ai.length, p + spec.ai.length + spec.length);
-      if (payload.length !== spec.length) continue;
+    const lotStart = 18; // 01 + 14 GTIN digits + 10
 
-      if (["11","12","13","15","16","17"].includes(spec.ai)) {
-        if (isValidGs1Date(payload)) {
-          dateCandidates.push({ position: p, ai: spec.ai });
-        }
-        continue;
+    // Prefer a candidate AI 17 whose six-digit date reaches the end of the scan.
+    // This handles strings like:
+    // 010081670302016610101316317280921
+    // = 01 00816703020166 | 10 1013163 | 17 280921
+    const endCandidate = s.length - 8;
+    if (endCandidate > lotStart && s.slice(endCandidate, endCandidate + 2) === "17") {
+      const candidateDate = s.slice(endCandidate + 2);
+      const lot = s.slice(lotStart, endCandidate);
+
+      if (lot && lot.length <= 20 && isValidGs1Date(candidateDate)) {
+        if (s[endCandidate - 1] === GS) return s;
+        return s.slice(0, endCandidate) + GS + s.slice(endCandidate);
       }
-
-      if (/^\d+$/.test(payload)) return p;
     }
 
-    // When recovering from a missing FNC1 after a variable field such as AI 10,
-    // prefer a valid expiration-date AI 17. Otherwise use the first valid date AI.
-    const expiration = dateCandidates.find(candidate => candidate.ai === "17");
-    if (expiration) return expiration.position;
-    if (dateCandidates.length) return dateCandidates[0].position;
+    // Otherwise scan backward for a valid AI 17. A candidate is only accepted
+    // when the preceding lot is non-empty and within AI 10's maximum length.
+    for (let p = s.length - 8; p > lotStart; p--) {
+      if (s.slice(p, p + 2) !== "17") continue;
 
-    return -1;
+      const candidateDate = s.slice(p + 2, p + 8);
+      if (!isValidGs1Date(candidateDate)) continue;
+
+      const lot = s.slice(lotStart, p);
+      if (!lot || lot.length > 20) continue;
+
+      if (s[p - 1] === GS) return s;
+      return s.slice(0, p) + GS + s.slice(p);
+    }
+
+    return null;
   }
 
   function isValidGs1Date(yymmdd) {
@@ -1468,8 +1465,6 @@
     const dd = Number(yymmdd.slice(4,6));
 
     if (mm < 1 || mm > 12) return false;
-
-    // GS1 permits day 00 to mean the last day of the month.
     if (dd === 0) return true;
 
     const year = 2000 + yy;
@@ -1478,30 +1473,6 @@
     return test.getUTCFullYear() === year &&
       test.getUTCMonth() === mm - 1 &&
       test.getUTCDate() === dd;
-  }
-
-  function findLikelyFollowingAI(s, start, maxLen) {
-    const limit = Math.min(s.length, start + maxLen);
-    for (let p = start + 1; p < limit; p++) {
-      const ai = s.slice(p, p + 2);
-      if (["11","13","15","16","17"].includes(ai) && /^\d{6}$/.test(s.slice(p + 2, p + 8))) return p;
-    }
-    return -1;
-  }
-
-  function resultFromAIs(values, raw) {
-    const gtin = values["01"] || values["02"] || "";
-    const expirationRaw = values["17"] || "";
-    return {
-      item: gtin,
-      gtin,
-      lot: values["10"] || "",
-      expirationRaw,
-      expiration: formatGs1Date(expirationRaw),
-      serial: values["21"] || "",
-      values,
-      raw
-    };
   }
 
   function formatGs1Date(yymmdd) {
@@ -1841,16 +1812,16 @@
     updateLastScanPanel(raw, parsed, internalId, "Accepted");
 
     const decodedAIs = parsed.values ? Object.keys(parsed.values).join(", ") : "";
-    const skipped = parsed.unknownSegments && parsed.unknownSegments.length
-      ? ` Skipped unrecognized segment(s): ${parsed.unknownSegments.join(" | ")}.`
+    const recoveryNote = parsed.recovered
+      ? ` ${parsed.recoveryMessage}`
       : "";
 
     setStatus(
-      `Accepted: ${itemName || internalId} — GTIN ${gtin}${parsed.lot ? ", lot " + parsed.lot : ""}, count ${records[key].count}.${decodedAIs ? " AIs: " + decodedAIs + "." : ""}${skipped}`,
-      skipped ? "warn" : "good"
+      `Accepted: ${itemName || internalId} — GTIN ${gtin}${parsed.lot ? ", lot " + parsed.lot : ""}, count ${records[key].count}.${decodedAIs ? " AIs: " + decodedAIs + "." : ""}${recoveryNote}`,
+      parsed.recovered ? "warn" : "good"
     );
     live.textContent = visible(raw);
-    if (!skipped) flashScreen("green");
+    flashScreen("green");
     if (settings.sound) beep();
   }
 
