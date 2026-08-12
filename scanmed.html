@@ -340,8 +340,36 @@
         <label class="check"><input id="sound" type="checkbox"> Beep on accepted scan</label>
         <label class="check"><input id="includeSerial" type="checkbox"> Separate records by serial</label>
 
+        <details style="margin-top:10px">
+          <summary>Serial scanner settings</summary>
+          <div class="row">
+            <div>
+              <label for="serialBaud">Baud</label>
+              <select id="serialBaud">
+                <option>9600</option>
+                <option>19200</option>
+                <option>38400</option>
+                <option>57600</option>
+                <option selected>115200</option>
+              </select>
+            </div>
+            <div>
+              <label for="serialEnd">End of scan</label>
+              <select id="serialEnd">
+                <option value="lf" selected>LF (0x0A)</option>
+                <option value="cr">CR (0x0D)</option>
+                <option value="crlf">CR/LF</option>
+              </select>
+            </div>
+          </div>
+          <p class="small" style="margin-top:6px">ASCII GS (0x1D) is preserved inside the barcode and sent directly to BarcodeParser.</p>
+        </details>
+
         <div class="buttons">
           <button id="saveSettings">Save Settings</button>
+          <button id="connectSerial" class="primary">Connect Serial Scanner</button>
+          <button id="disconnectSerial" disabled>Disconnect Serial</button>
+          <div id="serialStatus" class="small">Serial scanner disconnected.</div>
           <button id="manageCatalog" class="primary">Manage Item Catalog</button>
           <button id="exportConfig">Export Config</button>
           <button id="importConfig">Import Config</button>
@@ -555,9 +583,7 @@
 </main>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-<script src="https://gs1.github.io/GS1DigitalLinkCompressionPrototype/src/GS1DigitalLinkToolkit.js"></script>
-<script src="https://gs1.github.io/interpretGS1scan/interpretGS1Scan.js"></script>
-<script src="https://gs1.github.io/interpretGS1scan/plausibleGS1DL.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/PeterBrockfeld/BarcodeParser@master/scripts/BarcodeParser.min.js"></script>
 <script>
 (() => {
   "use strict";
@@ -577,6 +603,11 @@
   let catalog = normalizeCatalog(loadJson(CATALOG_KEY, {items:{}, gtinToInternalId:{}}));
   let pendingUnknownScan = null;
   let lastScanDetails = null;
+
+  let serialPort = null;
+  let serialReader = null;
+  let serialKeepReading = false;
+  let serialBuffer = [];
 
   let html5CameraScanner = null;
   let cameraRunning = false;
@@ -647,6 +678,10 @@
     setStatus("Settings saved.", "good");
     scanner.focus();
   });
+
+  $("connectSerial").addEventListener("click", connectSerialScanner);
+  $("disconnectSerial").addEventListener("click", disconnectSerialScanner);
+
 
   $("manageCatalog").addEventListener("click", () => {
     renderCatalog();
@@ -1018,6 +1053,127 @@
     void processScan(rawValue);
   }
 
+
+  async function connectSerialScanner() {
+    if (!("serial" in navigator)) {
+      $("serialStatus").textContent = "Web Serial is not supported in this browser.";
+      setStatus("Web Serial is not supported. Use Chrome or Edge on desktop/Android.", "bad");
+      flashScreen("red");
+      return;
+    }
+
+    if (serialPort) return;
+
+    try {
+      serialPort = await navigator.serial.requestPort();
+      await serialPort.open({
+        baudRate: Number($("serialBaud").value) || 115200,
+        dataBits: 8,
+        stopBits: 1,
+        parity: "none",
+        flowControl: "none"
+      });
+
+      serialBuffer = [];
+      serialKeepReading = true;
+      $("connectSerial").disabled = true;
+      $("disconnectSerial").disabled = false;
+      $("serialStatus").textContent = "Serial scanner connected.";
+      setStatus("Serial scanner connected. Scan an item.", "good");
+
+      void serialReadLoop();
+    } catch (error) {
+      serialPort = null;
+      $("serialStatus").textContent = `Serial connection failed: ${error?.message || error}`;
+      setStatus(`Could not connect serial scanner: ${error?.message || error}`, "bad");
+      flashScreen("red");
+    }
+  }
+
+  async function disconnectSerialScanner() {
+    serialKeepReading = false;
+
+    try {
+      if (serialReader) await serialReader.cancel();
+    } catch (_) {}
+
+    try {
+      if (serialPort) await serialPort.close();
+    } catch (_) {}
+
+    serialReader = null;
+    serialPort = null;
+    serialBuffer = [];
+
+    $("connectSerial").disabled = false;
+    $("disconnectSerial").disabled = true;
+    $("serialStatus").textContent = "Serial scanner disconnected.";
+  }
+
+  async function serialReadLoop() {
+    while (serialPort && serialPort.readable && serialKeepReading) {
+      serialReader = serialPort.readable.getReader();
+
+      try {
+        while (serialKeepReading) {
+          const { value, done } = await serialReader.read();
+          if (done) break;
+          if (!value) continue;
+
+          for (const byte of value) handleSerialByte(byte);
+        }
+      } catch (error) {
+        if (serialKeepReading) {
+          console.error("Serial read error:", error);
+          $("serialStatus").textContent = `Serial read error: ${error?.message || error}`;
+          setStatus(`Serial scanner read error: ${error?.message || error}`, "bad");
+          flashScreen("red");
+        }
+      } finally {
+        try { serialReader.releaseLock(); } catch (_) {}
+        serialReader = null;
+      }
+    }
+  }
+
+  function handleSerialByte(byte) {
+    const mode = $("serialEnd").value;
+
+    if (mode === "lf" && byte === 0x0A) {
+      finishSerialScan();
+      return;
+    }
+
+    if (mode === "cr" && byte === 0x0D) {
+      finishSerialScan();
+      return;
+    }
+
+    if (mode === "crlf") {
+      if (byte === 0x0D) return;
+      if (byte === 0x0A) {
+        finishSerialScan();
+        return;
+      }
+    }
+
+    serialBuffer.push(byte);
+  }
+
+  function finishSerialScan() {
+    if (!serialBuffer.length) return;
+
+    const raw = String.fromCharCode(...serialBuffer);
+    serialBuffer = [];
+
+    const gsCount = [...raw].filter(c => c.charCodeAt(0) === 29).length;
+    $("live").textContent = `${visible(raw)}\n\n${raw.length} characters received via serial`;
+    $("serialStatus").textContent =
+      `Last serial scan: ${raw.length} bytes, ${gsCount} GS separator${gsCount === 1 ? "" : "s"}.`;
+
+    void processScan(raw);
+  }
+
   function updateLastScanPanel(raw, parsed, internalId = "", state = "Decoded") {
     const gtin = parsed?.gtin || parsed?.item || "";
     const item = internalId && catalog.items[internalId] ? catalog.items[internalId] : null;
@@ -1039,6 +1195,9 @@
 
     if (parsed?.recovered) {
       $("lastAis").textContent += ` | ⚠ ${parsed.recoveryMessage}`;
+    }
+    if (parsed?.parser) {
+      $("lastAis").textContent += ` | Parser: ${parsed.parser}`;
     }
     $("lastRaw").textContent = raw ? visible(raw) : "—";
   }
@@ -1268,7 +1427,6 @@
 
     if (requiresLot && !parsed.lot) {
       updateLastScanPanel(raw, parsed, internalId, "Invalid");
-      updateLastScanPanel(pending.raw, pending.parsed, internalId, "Invalid");
       setStatus(`Item ${internalId} requires a lot number, but none was present. Scan was not counted.`, "bad");
       flashScreen("red");
       return;
@@ -1276,7 +1434,6 @@
 
     if (requiresExpiration && !parsed.expirationRaw) {
       updateLastScanPanel(raw, parsed, internalId, "Invalid");
-      updateLastScanPanel(pending.raw, pending.parsed, internalId, "Invalid");
       setStatus(`Item ${internalId} requires an expiration date, but none was present. Scan was not counted.`, "bad");
       flashScreen("red");
       return;
@@ -1295,48 +1452,41 @@
   async function parseBarcode(raw) {
     const normalized = normalizeScannerText(raw);
 
-    // Use GS1's own interpretation library as the primary decoder.
-    const primary = await parseWithGs1Library(normalized);
-
-    // IMPORTANT: a malformed element string can still be "valid" to a strict
-    // parser when AI 10 is present, because AI 10 is variable-length. In that
-    // case the parser may consume a trailing 17YYMMDD as part of the lot rather
-    // than reporting an error. Therefore, if AI 17 is absent, also test whether
-    // the raw scan contains an unambiguous missing-FNC1 expiration suffix.
-    if (primary.ok && primary.result.expirationRaw) {
-      return primary.result;
-    }
-
-    const recovered = recoverMissingFnc1BeforeExpiration(normalized);
-    if (recovered && recovered !== normalized) {
-      const second = await parseWithGs1Library(recovered);
-      if (second.ok && second.result.expirationRaw) {
-        second.result.recovered = true;
-        second.result.recoveryMessage =
-          "Recovered malformed GS1 data by inserting a missing FNC1 separator before AI 17.";
-        second.result.originalRaw = normalized;
-        second.result.recoveredRaw = recovered;
-        return second.result;
+    // Recover a narrow, known scanner failure first: missing FNC1 after AI 10.
+    // The repaired string is still parsed by BarcodeParser; we do not decode
+    // the recovered fields ourselves.
+    const recovery = recoverMissingFnc1BeforeExpiration(normalized);
+    if (recovery && recovery.fnc1 && recovery.fnc1 !== normalized) {
+      const recoveredResult = parseWithBarcodeParser(recovery.fnc1);
+      if (recoveredResult.ok && recoveredResult.result.expirationRaw) {
+        recoveredResult.result.recovered = true;
+        recoveredResult.result.recoveryMessage =
+          "Recovered malformed GS1 data by inserting a missing FNC1 separator after AI 10.";
+        recoveredResult.result.originalRaw = normalized;
+        recoveredResult.result.recoveredRaw = recovery.fnc1;
+        return recoveredResult.result;
       }
     }
 
-    // If the primary parse succeeded and no unambiguous recovery was possible,
-    // keep the standards-compliant result.
+    // Primary decode path: Peter Brockfeld BarcodeParser.
+    const primary = parseWithBarcodeParser(normalized);
     if (primary.ok) return primary.result;
 
-    // Plain UPC/EAN fallback only if the GS1 library itself is unavailable.
+    // Plain UPC/EAN fallback. BarcodeParser is a GS1 element-string parser,
+    // while a normal retail UPC/EAN may contain only the identifier itself.
     if (/^\d{8}$|^\d{12,14}$/.test(normalized)) {
+      const gtin = padGtin(normalized);
       return {
-        item: padGtin(normalized),
-        gtin: padGtin(normalized),
+        item: gtin,
+        gtin,
         lot: "",
         expirationRaw: "",
         expiration: "",
         serial: "",
-        values: {"01": padGtin(normalized)},
+        values: {"01": gtin},
         labels: {"01": "GTIN"},
-        parser: "UPC/EAN fallback",
-        parserError: primary.error || ""
+        parser: "UPC/EAN",
+        parserError: ""
       };
     }
 
@@ -1349,37 +1499,51 @@
       serial: "",
       values: {},
       labels: {},
-      parser: "GS1 interpretGS1scan",
-      parserError: primary.error || "Barcode could not be interpreted as valid GS1 data."
+      parser: "PeterBrockfeld/BarcodeParser",
+      parserError: primary.error || "Barcode could not be interpreted as a GS1 element string."
     };
   }
 
-  async function parseWithGs1Library(scan) {
-    if (typeof interpretScan !== "function") {
+  function parseWithBarcodeParser(scan) {
+    if (typeof window.parseBarcode !== "function") {
       return {
         ok: false,
-        error: "GS1 interpretGS1scan library did not load."
+        error: "PeterBrockfeld/BarcodeParser did not load."
       };
     }
 
     try {
-      const interpreted = await interpretScan(scan);
+      const answer = window.parseBarcode(scan);
+      const items = Array.isArray(answer?.parsedCodeItems)
+        ? answer.parsedCodeItems
+        : [];
 
-      if (!interpreted || interpreted.errmsg !== undefined) {
-        return {
-          ok: false,
-          error: String(interpreted?.errmsg || "GS1 parser rejected the barcode.")
-        };
+      if (!items.length) {
+        return { ok: false, error: "BarcodeParser returned no GS1 elements." };
       }
 
       const values = {};
       const labels = {};
+      const units = {};
+      const rawItems = [];
 
-      for (const element of interpreted.ol || []) {
-        if (!element || element.ai == null) continue;
-        const ai = String(element.ai);
-        values[ai] = String(element.value ?? "");
-        labels[ai] = String(element.label ?? "");
+      for (const item of items) {
+        if (!item || item.ai == null) continue;
+
+        const ai = String(item.ai);
+        const normalizedData = normalizeBarcodeParserData(ai, item.data);
+
+        values[ai] = normalizedData.raw;
+        labels[ai] = String(item.dataTitle || item.title || "");
+        units[ai] = String(item.unit || "");
+
+        rawItems.push({
+          ai,
+          title: labels[ai],
+          data: normalizedData.display,
+          raw: normalizedData.raw,
+          unit: units[ai]
+        });
       }
 
       const gtin = values["01"] || values["02"] || "";
@@ -1392,69 +1556,121 @@
           gtin,
           lot: values["10"] || "",
           expirationRaw,
-          expiration: formatGs1Date(expirationRaw),
+          expiration: expirationRaw ? formatGs1Date(expirationRaw) : "",
           serial: values["21"] || "",
           values,
           labels,
-          parser: "GS1 interpretGS1scan",
-          aiBrackets: interpreted.AIbrackets || "",
-          aiFnc1: interpreted.AIfnc1 || "",
-          digitalLink: interpreted.dl || "",
+          units,
+          parserItems: rawItems,
+          parser: "PeterBrockfeld/BarcodeParser",
+          codeName: String(answer?.codeName || ""),
           recovered: false
         }
       };
     } catch (error) {
       return {
         ok: false,
-        error: String(error?.message || error || "Unknown GS1 parser error")
+        error: String(error?.message || error || "BarcodeParser error")
       };
     }
   }
 
+  function normalizeBarcodeParserData(ai, data) {
+    if (data instanceof Date && !Number.isNaN(data.valueOf())) {
+      const yyyy = data.getFullYear();
+      const mm = String(data.getMonth() + 1).padStart(2, "0");
+      const dd = String(data.getDate()).padStart(2, "0");
+      return {
+        raw: `${String(yyyy).slice(-2)}${mm}${dd}`,
+        display: `${yyyy}-${mm}-${dd}`
+      };
+    }
+
+    const value = String(data ?? "");
+    return { raw: value, display: value };
+  }
+
   function recoverMissingFnc1BeforeExpiration(scan) {
-    // Only attempt recovery on raw element strings, not bracketed syntax or URLs.
     if (!scan || scan.includes("(") || /^https?:\/\//i.test(scan)) return null;
 
     let s = scan;
     if (/^\](?:d2|C1|Q3)/i.test(s)) s = s.slice(3);
 
-    // This recovery is intentionally narrow: AI 01 followed by AI 10.
-    // AI 01 is fixed at 14 digits, while AI 10 is variable up to 20 characters.
+    // Recovery is intentionally scoped to:
+    //   AI 01 + 14 digit GTIN + AI 10 + variable lot + one or more
+    //   recognizable fixed-length GS1 date AIs.
     if (!/^01\d{14}10/.test(s)) return null;
 
-    const lotStart = 18; // 01 + 14 GTIN digits + 10
+    const gtin = s.slice(2, 16);
+    const lotStart = 18;
 
-    // Prefer a candidate AI 17 whose six-digit date reaches the end of the scan.
-    // This handles strings like:
-    // 010081670302016610101316317280921
-    // = 01 00816703020166 | 10 1013163 | 17 280921
-    const endCandidate = s.length - 8;
-    if (endCandidate > lotStart && s.slice(endCandidate, endCandidate + 2) === "17") {
-      const candidateDate = s.slice(endCandidate + 2);
-      const lot = s.slice(lotStart, endCandidate);
-
-      if (lot && lot.length <= 20 && isValidGs1Date(candidateDate)) {
-        if (s[endCandidate - 1] === GS) return s;
-        return s.slice(0, endCandidate) + GS + s.slice(endCandidate);
-      }
-    }
-
-    // Otherwise scan backward for a valid AI 17. A candidate is only accepted
-    // when the preceding lot is non-empty and within AI 10's maximum length.
-    for (let p = s.length - 8; p > lotStart; p--) {
-      if (s.slice(p, p + 2) !== "17") continue;
-
-      const candidateDate = s.slice(p + 2, p + 8);
-      if (!isValidGs1Date(candidateDate)) continue;
-
+    // Find the earliest point after the lot where the ENTIRE remaining suffix
+    // can be parsed as a chain of valid fixed-length date AIs.
+    //
+    // Example:
+    // 010087912300798810TG10143170291125051217280512
+    //
+    // becomes:
+    // (01)00879123007988
+    // (10)TG1014317029
+    // (11)250512
+    // (17)280512
+    for (let p = lotStart + 1; p < s.length; p++) {
       const lot = s.slice(lotStart, p);
-      if (!lot || lot.length > 20) continue;
+      if (!lot || lot.length > 20) break;
 
-      if (s[p - 1] === GS) return s;
-      return s.slice(0, p) + GS + s.slice(p);
+      const suffix = parseRecoverableFixedSuffix(s, p);
+      if (!suffix || !suffix.fields.length) continue;
+
+      // We only perform this repair when the recovered suffix contains an
+      // expiration AI 17. That keeps the heuristic narrow enough for inventory.
+      if (!suffix.fields.some(field => field.ai === "17")) continue;
+
+      const bracketedFields = suffix.fields
+        .map(field => `(${field.ai})${field.value}`)
+        .join("");
+
+      return {
+        repaired: s[p - 1] !== GS,
+        gtin,
+        lot,
+        expirationRaw: suffix.fields.find(field => field.ai === "17")?.value || "",
+        fnc1: s[p - 1] === GS
+          ? s
+          : s.slice(0, p) + GS + s.slice(p),
+        bracketed: `(01)${gtin}(10)${lot}${bracketedFields}`,
+        recoveredFields: suffix.fields
+      };
     }
 
     return null;
+  }
+
+  function parseRecoverableFixedSuffix(s, start) {
+    const fields = [];
+    let p = start;
+
+    // Fixed-length date-related AIs commonly encountered in medical inventory.
+    // All carry six YYMMDD digits.
+    const dateAIs = new Set(["11", "12", "13", "15", "16", "17"]);
+
+    while (p < s.length) {
+      if (s[p] === GS) {
+        p++;
+        continue;
+      }
+
+      const ai = s.slice(p, p + 2);
+      if (!dateAIs.has(ai)) return null;
+
+      const value = s.slice(p + 2, p + 8);
+      if (value.length !== 6 || !isValidGs1Date(value)) return null;
+
+      fields.push({ ai, value });
+      p += 8;
+    }
+
+    return p === s.length ? { fields } : null;
   }
 
   function isValidGs1Date(yymmdd) {
@@ -2324,7 +2540,9 @@
       timeout: Math.max(20, Number($("timeout").value) || 150),
       requireFast: $("requireFast").checked,
       sound: $("sound").checked,
-      includeSerial: $("includeSerial").checked
+      includeSerial: $("includeSerial").checked,
+      serialBaud: Number($("serialBaud").value) || 115200,
+      serialEnd: $("serialEnd").value
     };
   }
 
@@ -2337,6 +2555,8 @@
     $("requireFast").checked = s.requireFast !== false;
     $("sound").checked = !!s.sound;
     $("includeSerial").checked = !!s.includeSerial;
+    if (s.serialBaud) $("serialBaud").value = String(s.serialBaud);
+    if (s.serialEnd) $("serialEnd").value = s.serialEnd;
     $("customTerminator").disabled = $("terminator").value !== "custom";
   }
 
@@ -2418,6 +2638,12 @@
   }
 
   initializeApplication();
+
+  window.addEventListener("pagehide", () => {
+    serialKeepReading = false;
+    if (serialReader) serialReader.cancel().catch(() => {});
+    if (serialPort) serialPort.close().catch(() => {});
+  });
 
 })();
 </script>
