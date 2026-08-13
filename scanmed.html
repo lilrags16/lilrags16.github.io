@@ -282,7 +282,13 @@
 
   <section class="card">
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
-      <h2 style="margin:0">Lot tally</h2>
+      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+        <h2 style="margin:0">Lot tally</h2>
+        <label class="check" style="margin:0">
+          <input id="expiredOnly" type="checkbox">
+          Expired only
+        </label>
+      </div>
       <div class="buttons" style="margin:0">
         <button id="exportCsv">Export CSV</button>
         <button id="copyCsv">Copy CSV</button>
@@ -799,6 +805,8 @@
   });
   $("importJson").addEventListener("click", () => $("importFile").click());
   $("importFile").addEventListener("change", importJson);
+  $("expiredOnly").addEventListener("change", render);
+
   $("clearAll").addEventListener("click", () => {
     if (!confirm("Delete the entire scan tally? This cannot be undone unless you exported a backup.")) return;
     records = {};
@@ -1792,19 +1800,23 @@
   }
 
   function render() {
-    const entries = Object.entries(records).sort((a,b) => {
-      const ra = a[1], rb = b[1];
-      const aid = ra.internalId || "";
-      const bid = rb.internalId || "";
-      return aid.localeCompare(bid) ||
-        String(rb.lastScanned || "").localeCompare(String(ra.lastScanned || ""));
-    });
+    const expiredOnly = $("expiredOnly")?.checked || false;
+
+    const entries = Object.entries(records)
+      .filter(([, record]) => !expiredOnly || isExpiredInventoryDate(record.expiration, record.expirationRaw))
+      .sort((a,b) => {
+        const ra = a[1], rb = b[1];
+        const aid = ra.internalId || "";
+        const bid = rb.internalId || "";
+        return aid.localeCompare(bid) ||
+          String(rb.lastScanned || "").localeCompare(String(ra.lastScanned || ""));
+      });
 
     tallyBody.innerHTML = "";
 
     if (!entries.length) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="10" class="small" style="text-align:center;padding:28px">No scans recorded yet.</td>`;
+      tr.innerHTML = `<td colspan="10" class="small" style="text-align:center;padding:28px">${expiredOnly ? "No expired inventory items." : "No scans recorded yet."}</td>`;
       tallyBody.appendChild(tr);
     }
 
