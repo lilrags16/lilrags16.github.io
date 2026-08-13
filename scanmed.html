@@ -40,7 +40,7 @@
     color: var(--text);
     font: 15px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
-  main { width: min(1180px, calc(100% - 28px)); margin: 28px auto 60px; }
+  main { width: min(1600px, calc(100% - 28px)); margin: 28px auto 60px; }
   h1 { margin: 0 0 4px; font-size: clamp(1.6rem, 3vw, 2.2rem); }
   h2 { margin: 0 0 14px; font-size: 1.05rem; }
   p { margin: 0; }
@@ -191,7 +191,7 @@
     box-shadow: 0 0 0 9999px rgba(0,0,0,.18);
   }
 
-  .app-shell { display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:18px; align-items:start; }
+  .app-shell { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:18px; align-items:start; }
   .main-column { min-width:0; }
   .sidebar { position:sticky; top:18px; }
   .scan-strip { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:stretch; margin-bottom:12px; }
@@ -208,7 +208,7 @@
   .sidebar .buttons { flex-direction:column; }
   .sidebar .buttons button { width:100%; }
   .catalog-add-grid { display:grid; grid-template-columns:1fr 2fr auto; gap:8px; margin:14px 0; }
-  @media (max-width:980px) {
+  @media (max-width:1050px) {
     .app-shell { grid-template-columns:1fr; }
     .sidebar { position:static; }
     .compact-last .row { grid-template-columns:1fr 1fr; }
@@ -217,6 +217,7 @@
     .scan-strip { grid-template-columns:1fr; }
     .compact-last .row, .compact-last .details-wide, .catalog-add-grid { grid-template-columns:1fr; }
   }
+  .expired-date { color:#c62828; font-weight:700; }
 </style>
 </head>
 <body>
@@ -472,6 +473,57 @@
       <div class="modal-actions"><button id="closeCamera">Close</button></div>
     </div>
   </dialog>
+
+<dialog id="bulkConfirmDialog">
+  <div class="modal-body">
+    <h2>Confirm Bulk Package</h2>
+    <p class="small">This scan appears to represent a higher-level package. Confirm the single-unit GTIN and how many individual units to add.</p>
+
+    <div class="row" style="margin-top:12px">
+      <div>
+        <label>Internal item</label>
+        <div id="bulkInternalItem" class="live">—</div>
+      </div>
+      <div>
+        <label>Scanned bulk GTIN</label>
+        <div id="bulkScannedGtin" class="live">—</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Lot</label>
+        <div id="bulkLot" class="live">—</div>
+      </div>
+      <div>
+        <label>Expiration</label>
+        <div id="bulkExpiration" class="live">—</div>
+      </div>
+    </div>
+
+    <label>Why this was detected as bulk</label>
+    <div id="bulkReason" class="live">—</div>
+
+    <div class="row">
+      <div>
+        <label for="bulkSingleUnitGtin">Single-unit GTIN</label>
+        <input id="bulkSingleUnitGtin" placeholder="GTIN inventory should be counted under">
+      </div>
+      <div>
+        <label for="bulkQuantity">Units to add</label>
+        <input id="bulkQuantity" type="number" min="1" step="1" placeholder="Enter quantity">
+      </div>
+    </div>
+
+    <p id="bulkCountSource" class="small" style="margin-top:8px"></p>
+
+    <div class="modal-actions">
+      <button id="cancelBulk">Cancel Scan</button>
+      <button id="confirmBulk" class="primary">Add Units</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="unknownGtinDialog">
   <div class="modal-body">
     <h2>Unknown GTIN</h2>
@@ -565,6 +617,7 @@
             <th>Internal ID</th>
             <th>Item name</th>
             <th>Associated GTINs</th>
+            <th>Single Unit GTIN</th>
             <th>Lot required</th>
             <th>Expiration required</th>
             <th></th>
@@ -602,6 +655,7 @@
   let records = loadJson(STORAGE_KEY, {});
   let catalog = normalizeCatalog(loadJson(CATALOG_KEY, {items:{}, gtinToInternalId:{}}));
   let pendingUnknownScan = null;
+  let pendingBulkScan = null;
   let lastScanDetails = null;
 
   let serialPort = null;
@@ -714,6 +768,15 @@
   $("cameraSelect").addEventListener("change", () => {
     // Selection alone does not switch cameras. User must press Use Selected Camera.
   });
+
+  $("cancelBulk").addEventListener("click", () => {
+    pendingBulkScan = null;
+    $("bulkConfirmDialog").close();
+    clearScanFlash();
+    setStatus("Bulk package scan cancelled.", "warn");
+    scanner.focus();
+  });
+  $("confirmBulk").addEventListener("click", confirmBulkScan);
 
   $("existingItemFilter").addEventListener("input", filterExistingItems);
   $("unknownMode").addEventListener("change", updateUnknownDialogMode);
@@ -1421,25 +1484,7 @@
       return;
     }
 
-    const itemConfig = catalog.items[internalId] || {};
-    const requiresLot = itemConfig.requiresLot !== false;
-    const requiresExpiration = itemConfig.requiresExpiration !== false;
-
-    if (requiresLot && !parsed.lot) {
-      updateLastScanPanel(raw, parsed, internalId, "Invalid");
-      setStatus(`Item ${internalId} requires a lot number, but none was present. Scan was not counted.`, "bad");
-      flashScreen("red");
-      return;
-    }
-
-    if (requiresExpiration && !parsed.expirationRaw) {
-      updateLastScanPanel(raw, parsed, internalId, "Invalid");
-      setStatus(`Item ${internalId} requires an expiration date, but none was present. Scan was not counted.`, "bad");
-      flashScreen("red");
-      return;
-    }
-
-    countResolvedScan(raw, parsed, internalId, settings);
+    handleResolvedScan(raw, parsed, internalId, settings);
   }
 
   function normalizeScannerText(value) {
@@ -1558,6 +1603,8 @@
           expirationRaw,
           expiration: expirationRaw ? formatGs1Date(expirationRaw) : "",
           serial: values["21"] || "",
+          contentGtin: values["02"] || "",
+          unitCount: values["37"] || values["30"] || "",
           values,
           labels,
           units,
@@ -1709,6 +1756,41 @@
     return digits.length <= 14 ? digits.padStart(14, "0") : digits;
   }
 
+  function isExpiredInventoryDate(displayDate, rawDate) {
+    let year, month, day;
+
+    const iso = String(displayDate || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (iso) {
+      year = Number(iso[1]);
+      month = Number(iso[2]);
+      day = Number(iso[3]);
+    } else {
+      const raw = String(rawDate || "").match(/^(\d{2})(\d{2})(\d{2})$/);
+      if (!raw) return false;
+      year = 2000 + Number(raw[1]);
+      month = Number(raw[2]);
+      day = Number(raw[3]);
+    }
+
+    if (!year || month < 1 || month > 12) return false;
+
+    // GS1 permits DD=00 when only year/month are significant.
+    // Treat that as expiring at the end of that month.
+    let expirationEnd;
+    if (day === 0) {
+      expirationEnd = new Date(year, month, 0, 23, 59, 59, 999);
+    } else {
+      expirationEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
+      if (
+        expirationEnd.getFullYear() !== year ||
+        expirationEnd.getMonth() !== month - 1 ||
+        expirationEnd.getDate() !== day
+      ) return false;
+    }
+
+    return expirationEnd < new Date();
+  }
+
   function render() {
     const entries = Object.entries(records).sort((a,b) => {
       const ra = a[1], rb = b[1];
@@ -1753,7 +1835,7 @@
         <td>${escapeHtml(itemName || "—")}</td>
         <td><code>${escapeHtml(r.gtin || r.item || "")}</code></td>
         <td><span class="pill">${escapeHtml(r.lot)}</span></td>
-        <td>${escapeHtml(r.expiration || "—")}</td>
+        <td><span class="${isExpiredInventoryDate(r.expiration, r.expirationRaw) ? "expired-date" : ""}">${escapeHtml(r.expiration || "—")}</span></td>
         <td>${escapeHtml(r.serial || "—")}</td>
         <td>${formatTimestamp(r.firstScanned)}</td>
         <td>${formatTimestamp(r.lastScanned)}</td>
@@ -1987,6 +2069,7 @@
     for (const item of Object.values(out.items)) {
       if (item.requiresLot == null) item.requiresLot = true;
       if (item.requiresExpiration == null) item.requiresExpiration = true;
+      if (item.singleUnitGtin == null) item.singleUnitGtin = "";
     }
     return out;
   }
@@ -1995,8 +2078,197 @@
     localStorage.setItem(CATALOG_KEY, JSON.stringify(catalog));
   }
 
-  function countResolvedScan(raw, parsed, internalId, settings = getSettings()) {
-    const gtin = parsed.gtin || parsed.item;
+
+  function handleResolvedScan(raw, parsed, internalId, settings = getSettings()) {
+    const itemConfig = catalog.items[internalId] || {};
+    const requiresLot = itemConfig.requiresLot !== false;
+    const requiresExpiration = itemConfig.requiresExpiration !== false;
+
+    if (requiresLot && !parsed.lot) {
+      updateLastScanPanel(raw, parsed, internalId, "Invalid");
+      setStatus(`Item ${internalId} requires a lot number, but none was present. Scan was not counted.`, "bad");
+      flashScreen("red");
+      return;
+    }
+
+    if (requiresExpiration && !parsed.expirationRaw) {
+      updateLastScanPanel(raw, parsed, internalId, "Invalid");
+      setStatus(`Item ${internalId} requires an expiration date, but none was present. Scan was not counted.`, "bad");
+      flashScreen("red");
+      return;
+    }
+
+    const packaging = detectBulkPackaging(parsed, internalId);
+
+    if (packaging.isBulk) {
+      pendingBulkScan = { raw, parsed, internalId, settings, packaging };
+      openBulkConfirmDialog(pendingBulkScan);
+      return;
+    }
+
+    const singleGtin = itemConfig.singleUnitGtin || parsed.gtin || parsed.item;
+    if (!itemConfig.singleUnitGtin && singleGtin) {
+      itemConfig.singleUnitGtin = singleGtin;
+      persistCatalog();
+    }
+
+    countResolvedScan(raw, parsed, internalId, settings, 1, singleGtin);
+  }
+
+  function detectBulkPackaging(parsed, internalId) {
+    const values = parsed.values || {};
+    const scannedGtin = String(values["01"] || parsed.gtin || parsed.item || "");
+    const contentGtin = String(values["02"] || parsed.contentGtin || "");
+    const itemConfig = catalog.items[internalId] || {};
+
+    let isBulk = false;
+    let reason = "";
+    let suggestedSingleGtin = itemConfig.singleUnitGtin || "";
+
+    // AI 02 explicitly identifies the trade items contained in a logistic unit.
+    if (contentGtin) {
+      isBulk = true;
+      suggestedSingleGtin = suggestedSingleGtin || contentGtin;
+      reason = "AI 02 identifies contained trade items, indicating a higher-level/logistic package.";
+    } else if (/^[1-8]\d{13}$/.test(scannedGtin)) {
+      // GTIN-14 indicator digits 1-8 are used for packaging levels.
+      isBulk = true;
+      reason = `GTIN-14 indicator digit ${scannedGtin[0]} indicates a packaging level above the base item.`;
+
+      const derived = deriveIndicatorZeroGtin(scannedGtin);
+      if (!suggestedSingleGtin && derived && catalog.gtinToInternalId[derived] === internalId) {
+        suggestedSingleGtin = derived;
+      }
+    }
+
+    if (!suggestedSingleGtin) {
+      suggestedSingleGtin = findLikelySingleUnitGtin(internalId, scannedGtin);
+    }
+
+    const ai37 = parsePositiveWholeNumber(values["37"]);
+    const ai30 = parsePositiveWholeNumber(values["30"]);
+    const suggestedCount = ai37 || ai30 || null;
+    const countAi = ai37 ? "37" : ai30 ? "30" : "";
+
+    return {
+      isBulk,
+      reason,
+      scannedGtin,
+      contentGtin,
+      suggestedSingleGtin,
+      suggestedCount,
+      countAi
+    };
+  }
+
+  function findLikelySingleUnitGtin(internalId, excludeGtin = "") {
+    const itemConfig = catalog.items[internalId] || {};
+    if (itemConfig.singleUnitGtin) return itemConfig.singleUnitGtin;
+
+    const candidates = Object.entries(catalog.gtinToInternalId)
+      .filter(([gtin, id]) => id === internalId && gtin !== excludeGtin)
+      .map(([gtin]) => gtin);
+
+    // Prefer a GTIN-14 with indicator 0, then UPC/EAN-length identifiers.
+    return candidates.find(gtin => /^0\d{13}$/.test(gtin)) ||
+      candidates.find(gtin => /^\d{8}$|^\d{12,13}$/.test(gtin)) ||
+      "";
+  }
+
+  function deriveIndicatorZeroGtin(gtin14) {
+    if (!/^\d{14}$/.test(gtin14)) return "";
+
+    const body = "0" + gtin14.slice(1, 13);
+    return body + calculateGs1CheckDigit(body);
+  }
+
+  function calculateGs1CheckDigit(body) {
+    if (!/^\d+$/.test(body)) return "";
+
+    let sum = 0;
+    let weight = 3;
+    for (let i = body.length - 1; i >= 0; i--) {
+      sum += Number(body[i]) * weight;
+      weight = weight === 3 ? 1 : 3;
+    }
+    return String((10 - (sum % 10)) % 10);
+  }
+
+  function parsePositiveWholeNumber(value) {
+    const text = String(value ?? "").trim();
+    if (!/^\d+$/.test(text)) return null;
+    const n = Number.parseInt(text, 10);
+    return n > 0 ? n : null;
+  }
+
+  function openBulkConfirmDialog(pending) {
+    const { parsed, internalId, packaging } = pending;
+    const item = catalog.items[internalId] || {};
+
+    $("bulkInternalItem").textContent = `${internalId} — ${item.name || "Unnamed item"}`;
+    $("bulkScannedGtin").textContent = packaging.scannedGtin || "—";
+    $("bulkLot").textContent = parsed.lot || "—";
+    $("bulkExpiration").textContent = parsed.expiration || parsed.expirationRaw || "—";
+    $("bulkReason").textContent = packaging.reason || "Higher-level package detected.";
+    $("bulkSingleUnitGtin").value = packaging.suggestedSingleGtin || "";
+    $("bulkQuantity").value = packaging.suggestedCount || "";
+
+    $("bulkCountSource").textContent = packaging.countAi
+      ? `Quantity was pre-populated from GS1 AI ${packaging.countAi}. Confirm it before adding inventory.`
+      : "No unit-count AI was found. Enter the number of individual units in this package.";
+
+    holdYellowScreen();
+    $("bulkConfirmDialog").showModal();
+
+    if (packaging.suggestedCount) {
+      $("bulkQuantity").focus();
+      $("bulkQuantity").select();
+    } else {
+      $("bulkQuantity").focus();
+    }
+  }
+
+  function confirmBulkScan() {
+    if (!pendingBulkScan) return;
+
+    const { raw, parsed, internalId, settings, packaging } = pendingBulkScan;
+    const itemConfig = catalog.items[internalId] || {};
+    const singleUnitGtin = $("bulkSingleUnitGtin").value.trim();
+    const quantity = parsePositiveWholeNumber($("bulkQuantity").value);
+
+    if (!singleUnitGtin) {
+      setStatus("Enter or confirm the single-unit GTIN.", "bad");
+      $("bulkSingleUnitGtin").focus();
+      return;
+    }
+
+    if (!quantity) {
+      setStatus("Enter a whole-number quantity greater than zero.", "bad");
+      $("bulkQuantity").focus();
+      return;
+    }
+
+    const mappedId = catalog.gtinToInternalId[singleUnitGtin];
+    if (mappedId && mappedId !== internalId) {
+      setStatus(`Single-unit GTIN ${singleUnitGtin} belongs to another Internal ID.`, "bad");
+      return;
+    }
+
+    catalog.gtinToInternalId[singleUnitGtin] = internalId;
+    itemConfig.singleUnitGtin = singleUnitGtin;
+    persistCatalog();
+
+    pendingBulkScan = null;
+    $("bulkConfirmDialog").close();
+    clearScanFlash();
+
+    countResolvedScan(raw, parsed, internalId, settings, quantity, singleUnitGtin, packaging.scannedGtin);
+    scanner.focus();
+  }
+
+  function countResolvedScan(raw, parsed, internalId, settings = getSettings(), quantity = 1, targetGtin = "", sourceGtin = "") {
+    const scannedGtin = parsed.gtin || parsed.item;
+    const gtin = targetGtin || scannedGtin;
     const serialPart = settings.includeSerial ? (parsed.serial || "") : "";
     const key = [internalId, gtin, parsed.lot, parsed.expirationRaw || "", serialPart].join("|");
     const now = new Date().toISOString();
@@ -2012,16 +2284,18 @@
         firstScanned: now,
         lastScanned: now,
         count: 0,
-        lastRaw: raw
+        lastRaw: raw,
+        lastSourceGtin: sourceGtin || scannedGtin
       };
     }
 
     records[key].internalId = internalId;
     records[key].gtin = gtin;
     records[key].itemName = itemName;
-    records[key].count += 1;
+    records[key].count += quantity;
     records[key].lastScanned = now;
     records[key].lastRaw = raw;
+    records[key].lastSourceGtin = sourceGtin || scannedGtin;
 
     persist();
     render();
@@ -2033,7 +2307,7 @@
       : "";
 
     setStatus(
-      `Accepted: ${itemName || internalId} — GTIN ${gtin}${parsed.lot ? ", lot " + parsed.lot : ""}, count ${records[key].count}.${decodedAIs ? " AIs: " + decodedAIs + "." : ""}${recoveryNote}`,
+      `Accepted: ${itemName || internalId} — ${quantity > 1 ? quantity + " units → " : ""}GTIN ${gtin}${parsed.lot ? ", lot " + parsed.lot : ""}, count ${records[key].count}.${decodedAIs ? " AIs: " + decodedAIs + "." : ""}${recoveryNote}`,
       parsed.recovered ? "warn" : "good"
     );
     live.textContent = visible(raw);
@@ -2143,7 +2417,8 @@
       catalog.items[internalId] = {
         name,
         requiresLot: $("newRequiresLot").checked,
-        requiresExpiration: $("newRequiresExpiration").checked
+        requiresExpiration: $("newRequiresExpiration").checked,
+        singleUnitGtin: ""
       };
     }
 
@@ -2155,28 +2430,7 @@
     $("unknownGtinDialog").close();
     clearScanFlash();
 
-    const itemConfig = catalog.items[internalId] || {};
-    const requiresLot = itemConfig.requiresLot !== false;
-    const requiresExpiration = itemConfig.requiresExpiration !== false;
-
-    if (requiresLot && !pending.parsed.lot) {
-      updateLastScanPanel(raw, parsed, internalId, "Invalid");
-      updateLastScanPanel(pending.raw, pending.parsed, internalId, "Invalid");
-      setStatus(`Item ${internalId} requires a lot number, but none was present. Scan was not counted.`, "bad");
-      flashScreen("red");
-      scanner.focus();
-      return;
-    }
-    if (requiresExpiration && !pending.parsed.expirationRaw) {
-      updateLastScanPanel(raw, parsed, internalId, "Invalid");
-      updateLastScanPanel(pending.raw, pending.parsed, internalId, "Invalid");
-      setStatus(`Item ${internalId} requires an expiration date, but none was present. Scan was not counted.`, "bad");
-      flashScreen("red");
-      scanner.focus();
-      return;
-    }
-
-    countResolvedScan(pending.raw, pending.parsed, internalId);
+    handleResolvedScan(pending.raw, pending.parsed, internalId, getSettings());
     scanner.focus();
   }
 
@@ -2187,7 +2441,7 @@
     const ids = Object.keys(catalog.items).sort();
     if (!ids.length) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="6" class="small" style="text-align:center;padding:24px">No internal items configured yet.</td>`;
+      tr.innerHTML = `<td colspan="7" class="small" style="text-align:center;padding:24px">No internal items configured yet.</td>`;
       body.appendChild(tr);
       return;
     }
@@ -2203,6 +2457,7 @@
         <td><input value="${escapeAttr(internalId)}" data-cat-id="${escapeAttr(internalId)}"></td>
         <td><input value="${escapeAttr(catalog.items[internalId].name || "")}" data-cat-name="${escapeAttr(internalId)}"></td>
         <td><textarea data-cat-gtins="${escapeAttr(internalId)}" style="min-height:72px" placeholder="One GTIN per line">${escapeHtml(gtins.join("\n"))}</textarea></td>
+        <td><input data-cat-single="${escapeAttr(internalId)}" value="${escapeAttr(catalog.items[internalId].singleUnitGtin || "")}" placeholder="Single-unit GTIN"></td>
         <td><label class="mini-check"><input type="checkbox" data-cat-lot="${escapeAttr(internalId)}" ${catalog.items[internalId].requiresLot !== false ? "checked" : ""}> Required</label></td>
         <td><label class="mini-check"><input type="checkbox" data-cat-exp="${escapeAttr(internalId)}" ${catalog.items[internalId].requiresExpiration !== false ? "checked" : ""}> Required</label></td>
         <td><button data-cat-delete="${escapeAttr(internalId)}" class="danger">Delete</button></td>`;
@@ -2236,6 +2491,25 @@
         persistCatalog();
         renderCatalog();
         setStatus("GTIN associations updated.", "good");
+      });
+    });
+
+    body.querySelectorAll("[data-cat-single]").forEach(input => {
+      input.addEventListener("change", () => {
+        const id = input.getAttribute("data-cat-single");
+        if (!catalog.items[id]) return;
+
+        const gtin = input.value.trim();
+        if (gtin && catalog.gtinToInternalId[gtin] && catalog.gtinToInternalId[gtin] !== id) {
+          setStatus(`GTIN ${gtin} is assigned to another Internal ID.`, "bad");
+          input.value = catalog.items[id].singleUnitGtin || "";
+          return;
+        }
+
+        catalog.items[id].singleUnitGtin = gtin;
+        if (gtin) catalog.gtinToInternalId[gtin] = id;
+        persistCatalog();
+        setStatus(`Single-unit GTIN updated for ${id}.`, "good");
       });
     });
 
@@ -2336,7 +2610,7 @@
       return;
     }
 
-    catalog.items[id] = { name, requiresLot: true, requiresExpiration: true };
+    catalog.items[id] = { name, requiresLot: true, requiresExpiration: true, singleUnitGtin: "" };
     persistCatalog();
     $("quickInternalId").value = "";
     $("quickInternalName").value = "";
@@ -2351,7 +2625,7 @@
       id = `ITEM-${String(n++).padStart(4,"0")}`;
     } while (catalog.items[id]);
 
-    catalog.items[id] = { name: "New Item", requiresLot: true, requiresExpiration: true };
+    catalog.items[id] = { name: "New Item", requiresLot: true, requiresExpiration: true, singleUnitGtin: "" };
     persistCatalog();
     renderCatalog();
   }
@@ -2363,6 +2637,7 @@
       "Name",
       "Lot Required",
       "Expiration Required",
+      "Single Unit GTIN",
       "GTINs"
     ]];
 
@@ -2378,6 +2653,7 @@
         item.name || "",
         item.requiresLot !== false ? "Yes" : "No",
         item.requiresExpiration !== false ? "Yes" : "No",
+        item.singleUnitGtin || "",
         gtins.join(";")
       ]);
     }
@@ -2402,6 +2678,7 @@
       const nameIndex = header.findIndex(v => ["name","item name","item_name"].includes(v));
       const lotIndex = header.findIndex(v => ["lot required","requires lot","requires_lot"].includes(v));
       const expIndex = header.findIndex(v => ["expiration required","requires expiration","requires_expiration","expiry required"].includes(v));
+      const singleIndex = header.findIndex(v => ["single unit gtin","single_unit_gtin","single gtin","unit gtin"].includes(v));
       const gtinIndex = header.findIndex(v => ["gtin","gtins","upc","upcs","barcodes"].includes(v));
 
       if (idIndex < 0 || nameIndex < 0) {
@@ -2419,8 +2696,13 @@
           ...existing,
           name,
           requiresLot: lotIndex >= 0 ? parseCsvBoolean(row[lotIndex], existing.requiresLot ?? true) : (existing.requiresLot ?? true),
-          requiresExpiration: expIndex >= 0 ? parseCsvBoolean(row[expIndex], existing.requiresExpiration ?? true) : (existing.requiresExpiration ?? true)
+          requiresExpiration: expIndex >= 0 ? parseCsvBoolean(row[expIndex], existing.requiresExpiration ?? true) : (existing.requiresExpiration ?? true),
+          singleUnitGtin: singleIndex >= 0 ? String(row[singleIndex] || "").trim() : (existing.singleUnitGtin || "")
         };
+
+        if (catalog.items[id].singleUnitGtin) {
+          catalog.gtinToInternalId[catalog.items[id].singleUnitGtin] = id;
+        }
 
         if (gtinIndex >= 0 && row[gtinIndex]) {
           const gtins = String(row[gtinIndex])
