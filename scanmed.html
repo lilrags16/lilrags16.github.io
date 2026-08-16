@@ -218,6 +218,38 @@
     .compact-last .row, .compact-last .details-wide, .catalog-add-grid { grid-template-columns:1fr; }
   }
   .expired-date { color:#c62828; font-weight:700; }
+
+  .qr-icon-svg { width:24px; height:24px; display:block; }
+  .row-label-button {
+    width:30px;
+    height:30px;
+    min-width:30px;
+    padding:0;
+    display:inline-grid;
+    place-items:center;
+    border-radius:7px;
+  }
+  .row-label-button svg { width:16px; height:16px; display:block; }
+  .label-builder-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,.9fr); gap:18px; }
+  .label-preview-wrap {
+    background:#e9edf3;
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:18px;
+    display:grid;
+    place-items:center;
+    min-height:220px;
+  }
+  #labelPreview {
+    max-width:100%;
+    height:auto;
+    background:#fff;
+    box-shadow:0 3px 12px rgba(0,0,0,.15);
+    image-rendering:pixelated;
+  }
+  .label-printer-status { margin-top:8px; font-size:.88rem; color:var(--muted); }
+  @media(max-width:850px){ .label-builder-grid{grid-template-columns:1fr;} }
+
 </style>
 </head>
 <body>
@@ -238,6 +270,17 @@
         </div>
         <div class="scan-actions">
           <button id="cameraLaunch" class="primary icon-button" title="Open camera scanner" aria-label="Open camera scanner">📷</button>
+          <button id="labelBuilderLaunch" class="icon-button" title="Create GS1 DataMatrix labels" aria-label="Create GS1 DataMatrix labels">
+            <svg class="qr-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="2" y="2" width="7" height="7" fill="currentColor"/><rect x="4" y="4" width="3" height="3" fill="var(--panel)"/>
+              <rect x="15" y="2" width="7" height="7" fill="currentColor"/><rect x="17" y="4" width="3" height="3" fill="var(--panel)"/>
+              <rect x="2" y="15" width="7" height="7" fill="currentColor"/><rect x="4" y="17" width="3" height="3" fill="var(--panel)"/>
+              <rect x="12" y="11" width="3" height="3" fill="currentColor"/><rect x="16" y="11" width="2" height="2" fill="currentColor"/>
+              <rect x="19" y="12" width="3" height="3" fill="currentColor"/><rect x="11" y="16" width="2" height="3" fill="currentColor"/>
+              <rect x="14" y="15" width="4" height="2" fill="currentColor"/><rect x="19" y="17" width="3" height="5" fill="currentColor"/>
+              <rect x="13" y="20" width="4" height="2" fill="currentColor"/>
+            </svg>
+          </button>
           <button id="manualLaunch" title="Manual barcode entry">Barcode Text</button>
           <button id="manualEntryLaunch" title="Manual inventory entry">Manual Entry</button>
         </div>
@@ -388,6 +431,89 @@
       </section>
     </aside>
   </div>
+
+
+  <dialog id="labelBuilderDialog" style="width:min(980px,calc(100% - 24px))">
+    <div class="modal-body">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
+        <div>
+          <h2 style="margin-bottom:4px">GS1 DataMatrix Label Builder</h2>
+          <p class="small">Create a simple item label and print one or more copies.</p>
+        </div>
+        <button id="closeLabelBuilder">Close</button>
+      </div>
+
+      <div class="label-builder-grid" style="margin-top:14px">
+        <div>
+          <label for="labelInternalId">Item</label>
+          <select id="labelInternalId"></select>
+
+          <div class="row">
+            <div>
+              <label for="labelName">Item name</label>
+              <input id="labelName">
+            </div>
+            <div>
+              <label for="labelGtin">GTIN</label>
+              <input id="labelGtin" inputmode="numeric" placeholder="14-digit GTIN">
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="labelLot">Lot</label>
+              <input id="labelLot" placeholder="Lot / batch">
+            </div>
+            <div>
+              <label for="labelExpiration">Expiration</label>
+              <input id="labelExpiration" type="date">
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="labelCopies">Number of labels</label>
+              <input id="labelCopies" type="number" min="1" max="500" step="1" value="1">
+            </div>
+            <div>
+              <label>Label size</label>
+              <div class="row">
+                <input id="labelWidthMm" type="number" min="15" max="80" step="1" value="40" aria-label="Label width mm">
+                <input id="labelHeightMm" type="number" min="8" max="30" step="1" value="12" aria-label="Label height mm">
+              </div>
+              <p class="small">Width × height in mm</p>
+            </div>
+          </div>
+
+          <div class="buttons">
+            <button id="useLastScanForLabel">Use Last Scan</button>
+            <button id="refreshLabelPreview">Refresh Preview</button>
+          </div>
+
+          <details style="margin-top:12px">
+            <summary>Encoded GS1 data</summary>
+            <div id="labelGs1Text" class="live">—</div>
+          </details>
+        </div>
+
+        <div>
+          <label>Preview</label>
+          <div class="label-preview-wrap">
+            <canvas id="labelPreview" width="320" height="96"></canvas>
+          </div>
+          <div id="labelBuilderStatus" class="status"></div>
+
+          <div class="buttons">
+            <button id="connectD30">Connect D30</button>
+            <button id="printD30" class="primary">Print to D30</button>
+            <button id="browserPrintLabels">Browser Print</button>
+          </div>
+          <div id="d30Status" class="label-printer-status">D30 not connected.</div>
+          <p class="small" style="margin-top:8px">Direct D30 printing uses Web Bluetooth and requires a Chromium-based browser. Browser Print is available as a fallback.</p>
+        </div>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="manualDialog">
     <div class="modal-body">
@@ -643,6 +769,7 @@
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/PeterBrockfeld/BarcodeParser@master/scripts/BarcodeParser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bwip-js/4.11.2/bwip-js-min.js"></script>
 <script>
 (() => {
   "use strict";
@@ -663,6 +790,9 @@
   let pendingUnknownScan = null;
   let pendingBulkScan = null;
   let lastScanDetails = null;
+
+  let d30Device = null;
+  let d30Characteristic = null;
 
   let serialPort = null;
   let serialReader = null;
@@ -689,6 +819,29 @@
   scanner.addEventListener("focus", () => scanner.classList.add("active"));
   scanner.addEventListener("blur", () => scanner.classList.remove("active"));
   scanner.addEventListener("click", () => scanner.focus());
+
+  $("labelBuilderLaunch").addEventListener("click", () => {
+    populateLabelBuilderItems();
+    prefillLabelBuilderFromLastScan();
+    $("labelBuilderDialog").showModal();
+    void renderLabelPreview();
+  });
+  $("closeLabelBuilder").addEventListener("click", () => $("labelBuilderDialog").close());
+  $("labelInternalId").addEventListener("change", () => {
+    fillLabelBuilderFromItem($("labelInternalId").value);
+    void renderLabelPreview();
+  });
+  ["labelName","labelGtin","labelLot","labelExpiration","labelWidthMm","labelHeightMm"].forEach(id => {
+    $(id).addEventListener("input", () => void renderLabelPreview());
+  });
+  $("refreshLabelPreview").addEventListener("click", () => void renderLabelPreview());
+  $("useLastScanForLabel").addEventListener("click", () => {
+    prefillLabelBuilderFromLastScan(true);
+    void renderLabelPreview();
+  });
+  $("connectD30").addEventListener("click", connectD30Printer);
+  $("printD30").addEventListener("click", printLabelSetToD30);
+  $("browserPrintLabels").addEventListener("click", browserPrintLabelSet);
 
   $("manualLaunch").addEventListener("click", () => {
     $("manualDialog").showModal();
@@ -1450,6 +1603,378 @@
     scanner.focus();
   }
 
+
+  function openLabelBuilderForRecord(key) {
+    const record = records[key];
+    if (!record) {
+      setStatus("That inventory row could not be found.", "bad");
+      return;
+    }
+
+    populateLabelBuilderItems();
+
+    const internalId = record.internalId || "";
+    const item = catalog.items[internalId] || {};
+    if (internalId && catalog.items[internalId]) {
+      $("labelInternalId").value = internalId;
+    }
+
+    $("labelName").value = item.name || record.itemName || "";
+    $("labelGtin").value =
+      item.singleUnitGtin ||
+      record.gtin ||
+      record.item ||
+      "";
+    $("labelLot").value = record.lot || "";
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(record.expiration || "")) {
+      $("labelExpiration").value = record.expiration;
+    } else if (/^\d{6}$/.test(record.expirationRaw || "")) {
+      const raw = record.expirationRaw;
+      const yyyy = 2000 + Number(raw.slice(0,2));
+      const mm = raw.slice(2,4);
+      let dd = raw.slice(4,6);
+      if (dd === "00") {
+        dd = String(new Date(yyyy, Number(mm), 0).getDate()).padStart(2,"0");
+      }
+      $("labelExpiration").value = `${yyyy}-${mm}-${dd}`;
+    } else {
+      $("labelExpiration").value = "";
+    }
+
+    $("labelCopies").value = "1";
+    $("labelBuilderDialog").showModal();
+    void renderLabelPreview();
+  }
+
+  function populateLabelBuilderItems() {
+    const select = $("labelInternalId");
+    const previous = select.value;
+    select.innerHTML = "";
+
+    for (const internalId of Object.keys(catalog.items).sort()) {
+      const option = document.createElement("option");
+      option.value = internalId;
+      option.textContent = `${internalId} — ${catalog.items[internalId].name || "Unnamed item"}`;
+      select.appendChild(option);
+    }
+
+    if (previous && catalog.items[previous]) select.value = previous;
+  }
+
+  function fillLabelBuilderFromItem(internalId) {
+    const item = catalog.items[internalId];
+    if (!item) return;
+
+    $("labelName").value = item.name || "";
+
+    const gtins = Object.entries(catalog.gtinToInternalId)
+      .filter(([, id]) => id === internalId)
+      .map(([gtin]) => gtin);
+
+    $("labelGtin").value =
+      item.singleUnitGtin ||
+      gtins.find(gtin => /^\d{14}$/.test(gtin)) ||
+      gtins[0] ||
+      "";
+
+    $("labelLot").value = "";
+    $("labelExpiration").value = "";
+  }
+
+  function prefillLabelBuilderFromLastScan(force = false) {
+    const details = lastScanDetails;
+    if (!details?.parsed) {
+      if (!force && $("labelInternalId").value) {
+        fillLabelBuilderFromItem($("labelInternalId").value);
+      }
+      return;
+    }
+
+    const internalId = details.internalId || "";
+    if (internalId && catalog.items[internalId]) {
+      $("labelInternalId").value = internalId;
+      $("labelName").value = catalog.items[internalId].name || "";
+    }
+
+    const parsed = details.parsed;
+    const configuredUnit = internalId ? catalog.items[internalId]?.singleUnitGtin : "";
+    $("labelGtin").value = configuredUnit || parsed.gtin || parsed.item || "";
+    $("labelLot").value = parsed.lot || "";
+
+    const exp = parsed.expiration || "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(exp)) {
+      $("labelExpiration").value = exp;
+    } else if (/^\d{6}$/.test(parsed.expirationRaw || "")) {
+      const raw = parsed.expirationRaw;
+      const yyyy = 2000 + Number(raw.slice(0,2));
+      const mm = raw.slice(2,4);
+      let dd = raw.slice(4,6);
+      if (dd === "00") {
+        dd = String(new Date(yyyy, Number(mm), 0).getDate()).padStart(2,"0");
+      }
+      $("labelExpiration").value = `${yyyy}-${mm}-${dd}`;
+    }
+  }
+
+  function buildLabelGs1Text() {
+    const gtin = $("labelGtin").value.trim();
+    const lot = $("labelLot").value.trim();
+    const expiration = $("labelExpiration").value;
+
+    if (!/^\d{14}$/.test(gtin)) {
+      throw new Error("GTIN must be exactly 14 digits for a GS1 DataMatrix label.");
+    }
+
+    let text = `(01)${gtin}`;
+
+    if (expiration) {
+      const [yyyy, mm, dd] = expiration.split("-");
+      if (!yyyy || !mm || !dd) throw new Error("Expiration date is invalid.");
+      text += `(17)${yyyy.slice(-2)}${mm}${dd}`;
+    }
+
+    // Put variable-length AI 10 last so no trailing FNC1 is required.
+    if (lot) text += `(10)${lot}`;
+
+    return text;
+  }
+
+  function fitTextToWidth(ctx, text, maxWidth, initialPx, minPx = 8, weight = "700") {
+    let px = initialPx;
+    while (px > minPx) {
+      ctx.font = `${weight} ${px}px system-ui, sans-serif`;
+      if (ctx.measureText(text).width <= maxWidth) break;
+      px--;
+    }
+    return px;
+  }
+
+  async function renderLabelPreview() {
+    const canvas = $("labelPreview");
+    const widthMm = Math.max(15, Number($("labelWidthMm").value) || 40);
+    const heightMm = Math.max(8, Number($("labelHeightMm").value) || 12);
+    const pxPerMm = 8; // D30 is approximately 203 dpi.
+    const widthPx = Math.max(120, Math.round(widthMm * pxPerMm));
+    const heightPx = Math.max(64, Math.round(heightMm * pxPerMm));
+
+    canvas.width = widthPx;
+    canvas.height = heightPx;
+
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, widthPx, heightPx);
+    ctx.fillStyle = "#000";
+
+    try {
+      if (typeof bwipjs === "undefined") throw new Error("bwip-js did not load.");
+
+      const gs1 = buildLabelGs1Text();
+      $("labelGs1Text").textContent = gs1;
+
+      const dm = document.createElement("canvas");
+      bwipjs.toCanvas(dm, {
+        bcid: "gs1datamatrix",
+        text: gs1,
+        scale: 3,
+        padding: 0,
+        backgroundcolor: "FFFFFF"
+      });
+
+      const pad = Math.max(3, Math.round(heightPx * 0.04));
+      const dmSize = Math.min(heightPx - pad * 2, Math.round(widthPx * 0.34));
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(dm, pad, pad, dmSize, dmSize);
+
+      const textX = pad + dmSize + Math.max(5, Math.round(widthPx * 0.018));
+      const textWidth = widthPx - textX - pad;
+      const name = $("labelName").value.trim() || "Unnamed item";
+      const lot = $("labelLot").value.trim();
+      const exp = $("labelExpiration").value;
+
+      const namePx = fitTextToWidth(ctx, name, textWidth, Math.max(12, Math.round(heightPx * 0.23)), 9);
+      ctx.font = `700 ${namePx}px system-ui, sans-serif`;
+      ctx.textBaseline = "top";
+      ctx.fillText(name, textX, pad, textWidth);
+
+      const infoPx = Math.max(9, Math.round(heightPx * 0.15));
+      ctx.font = `600 ${infoPx}px system-ui, sans-serif`;
+      const infoY = pad + namePx + Math.max(3, Math.round(heightPx * 0.05));
+      ctx.fillText(`LOT: ${lot || "—"}`, textX, infoY, textWidth);
+      ctx.fillText(`EXP: ${exp || "—"}`, textX, infoY + infoPx + 3, textWidth);
+
+      $("labelBuilderStatus").textContent = "Preview ready.";
+      $("labelBuilderStatus").className = "status good";
+      return canvas;
+    } catch (error) {
+      ctx.fillStyle = "#000";
+      ctx.font = "12px system-ui, sans-serif";
+      ctx.fillText("Label preview error", 10, 10);
+      $("labelGs1Text").textContent = "—";
+      $("labelBuilderStatus").textContent = error?.message || String(error);
+      $("labelBuilderStatus").className = "status bad";
+      return null;
+    }
+  }
+
+  async function connectD30Printer() {
+    if (!navigator.bluetooth) {
+      $("d30Status").textContent = "Web Bluetooth is not supported in this browser.";
+      return;
+    }
+
+    try {
+      d30Device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: ["0000ff00-0000-1000-8000-00805f9b34fb"]
+      });
+
+      const server = await d30Device.gatt.connect();
+      const service = await server.getPrimaryService("0000ff00-0000-1000-8000-00805f9b34fb");
+      d30Characteristic = await service.getCharacteristic("0000ff02-0000-1000-8000-00805f9b34fb");
+
+      d30Device.addEventListener("gattserverdisconnected", () => {
+        d30Characteristic = null;
+        $("d30Status").textContent = "D30 disconnected.";
+      });
+
+      $("d30Status").textContent = `Connected to ${d30Device.name || "D30 printer"}.`;
+    } catch (error) {
+      d30Characteristic = null;
+      $("d30Status").textContent = `D30 connection failed: ${error?.message || error}`;
+    }
+  }
+
+  function makeD30PrintCanvas(sourceCanvas) {
+    // D30 raster direction is rotated relative to the physical 40x12 label.
+    const out = document.createElement("canvas");
+    out.width = Math.ceil(sourceCanvas.height / 8) * 8;
+    out.height = sourceCanvas.width;
+
+    const ctx = out.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, out.width, out.height);
+    ctx.translate(out.width / 2, out.height / 2);
+    ctx.rotate(Math.PI / 2);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(
+      sourceCanvas,
+      -sourceCanvas.width / 2,
+      -sourceCanvas.height / 2,
+      sourceCanvas.width,
+      sourceCanvas.height
+    );
+    return out;
+  }
+
+  function d30GetPrintData(canvas) {
+    const ctx = canvas.getContext("2d");
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const widthBytes = canvas.width / 8;
+    const data = new Uint8Array(widthBytes * canvas.height + 8);
+    let offset = 0;
+
+    for (let y = 0; y < canvas.height; y++) {
+      for (let xb = 0; xb < widthBytes; xb++) {
+        let value = 0;
+        for (let bit = 0; bit < 8; bit++) {
+          const x = xb * 8 + bit;
+          const pi = (canvas.width * y + x) * 4;
+          const sum = pixels[pi] + pixels[pi + 1] + pixels[pi + 2];
+          const black = sum < 384 ? 1 : 0;
+          value |= black << (7 - bit);
+        }
+        data[offset++] = value;
+      }
+    }
+    return data;
+  }
+
+  async function d30Write(characteristic, data) {
+    if (characteristic.writeValueWithResponse) {
+      await characteristic.writeValueWithResponse(data);
+    } else {
+      await characteristic.writeValue(data);
+    }
+  }
+
+  async function printCanvasToD30(characteristic, canvas) {
+    const widthBytes = canvas.width / 8;
+    const data = d30GetPrintData(canvas);
+    const height = Math.floor(data.length / widthBytes);
+
+    const header = new Uint8Array([
+      0x1b, 0x40,
+      0x1d, 0x76, 0x30, 0x00,
+      widthBytes % 256, Math.floor(widthBytes / 256),
+      height % 256, Math.floor(height / 256)
+    ]);
+    const end = new Uint8Array([0x1b, 0x64, 0x00]);
+
+    await d30Write(characteristic, header);
+    for (let i = 0; i < data.length; i += 128) {
+      await d30Write(characteristic, data.slice(i, i + 128));
+    }
+    await d30Write(characteristic, end);
+  }
+
+  async function printLabelSetToD30() {
+    const copies = Math.max(1, Math.min(500, Number.parseInt($("labelCopies").value, 10) || 1));
+    const preview = await renderLabelPreview();
+    if (!preview) return;
+
+    if (!d30Characteristic) {
+      await connectD30Printer();
+      if (!d30Characteristic) return;
+    }
+
+    try {
+      const printCanvas = makeD30PrintCanvas(preview);
+      $("d30Status").textContent = `Printing 0 / ${copies}…`;
+
+      for (let i = 0; i < copies; i++) {
+        await printCanvasToD30(d30Characteristic, printCanvas);
+        $("d30Status").textContent = `Printing ${i + 1} / ${copies}…`;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      $("d30Status").textContent = `Printed ${copies} label${copies === 1 ? "" : "s"}.`;
+    } catch (error) {
+      $("d30Status").textContent = `Print failed: ${error?.message || error}`;
+    }
+  }
+
+  async function browserPrintLabelSet() {
+    const copies = Math.max(1, Math.min(500, Number.parseInt($("labelCopies").value, 10) || 1));
+    const canvas = await renderLabelPreview();
+    if (!canvas) return;
+
+    const dataUrl = canvas.toDataURL("image/png");
+    const widthMm = Math.max(15, Number($("labelWidthMm").value) || 40);
+    const heightMm = Math.max(8, Number($("labelHeightMm").value) || 12);
+    const w = window.open("", "_blank");
+    if (!w) {
+      $("labelBuilderStatus").textContent = "Popup was blocked. Allow popups to use Browser Print.";
+      $("labelBuilderStatus").className = "status bad";
+      return;
+    }
+
+    const images = Array.from({ length: copies }, () =>
+      `<div class="label"><img src="${dataUrl}"></div>`
+    ).join("");
+
+    w.document.write(`<!doctype html>
+<html><head><title>Print Labels</title>
+<style>
+@page{size:${widthMm}mm ${heightMm}mm;margin:0}
+html,body{margin:0;padding:0}
+.label{width:${widthMm}mm;height:${heightMm}mm;page-break-after:always;display:grid;place-items:center;overflow:hidden}
+.label:last-child{page-break-after:auto}
+img{width:100%;height:100%;object-fit:fill;image-rendering:pixelated}
+</style></head><body>${images}<script>window.onload=()=>window.print();<\/script></body></html>`);
+    w.document.close();
+  }
+
   async function processScan(rawInput) {
     const raw = normalizeScannerText(rawInput);
     if (!raw) {
@@ -1853,7 +2378,21 @@
         <td>${formatTimestamp(r.lastScanned)}</td>
         <td class="num"><strong>${Number(r.count) || 0}</strong></td>
         <td>
-          <div style="display:flex;gap:6px;align-items:center;min-width:190px">
+          <div style="display:flex;gap:6px;align-items:center;min-width:228px">
+            <button
+              class="row-label-button"
+              data-row-label="${escapeAttr(key)}"
+              title="Create label for this lot"
+              aria-label="Create label for this lot">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="2" y="2" width="7" height="7" fill="currentColor"/><rect x="4" y="4" width="3" height="3" fill="var(--panel)"/>
+                <rect x="15" y="2" width="7" height="7" fill="currentColor"/><rect x="17" y="4" width="3" height="3" fill="var(--panel)"/>
+                <rect x="2" y="15" width="7" height="7" fill="currentColor"/><rect x="4" y="17" width="3" height="3" fill="var(--panel)"/>
+                <rect x="12" y="11" width="3" height="3" fill="currentColor"/><rect x="16" y="11" width="2" height="2" fill="currentColor"/>
+                <rect x="19" y="12" width="3" height="3" fill="currentColor"/><rect x="13" y="17" width="3" height="5" fill="currentColor"/>
+                <rect x="18" y="18" width="4" height="4" fill="currentColor"/>
+              </svg>
+            </button>
             <input type="text" inputmode="numeric" data-quantity="${escapeAttr(key)}"
               placeholder="+1, -1, or 10" aria-label="Adjust quantity" style="width:115px">
             <button data-apply-quantity="${escapeAttr(key)}">Apply</button>
@@ -1871,6 +2410,13 @@
           persist();
           render();
         }
+      });
+    });
+
+    tallyBody.querySelectorAll("[data-row-label]").forEach(button => {
+      button.addEventListener("click", () => {
+        const key = button.getAttribute("data-row-label");
+        openLabelBuilderForRecord(key);
       });
     });
 
